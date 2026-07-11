@@ -1,6 +1,0 @@
-{
-  "name": "Minimalist Personal Dashboard",
-  "description": "A beautiful, clean, and distraction-free daily focus dashboard with a live clock, dynamic greeting, and quick tasks list.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
