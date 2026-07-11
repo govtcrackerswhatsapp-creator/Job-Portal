@@ -1,0 +1,96 @@
+{
+  "$schema": "https://raw.githubusercontent.com/google/firebase-blueprints/main/schema.json",
+  "name": "Minimalist Focus Dashboard Schema",
+  "description": "Clean and distraction-free daily focus dashboard with live clock, tasks list, and energy cadence tracker.",
+  "entities": {
+    "userProfile": {
+      "title": "UserProfile",
+      "description": "User profile with display name and daily settings",
+      "type": "object",
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "photoURL": {
+          "type": "string"
+        },
+        "singularFocus": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": ["displayName", "email", "updatedAt"]
+    },
+    "task": {
+      "title": "Task",
+      "description": "A todo list task",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "userId": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "text", "completed", "createdAt", "userId"]
+    },
+    "focusLog": {
+      "title": "FocusLog",
+      "description": "A daily energy/focus log entry",
+      "type": "object",
+      "properties": {
+        "day": {
+          "type": "string"
+        },
+        "level": {
+          "type": "string",
+          "enum": ["none", "low", "medium", "high"]
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "userId": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": ["day", "level", "note", "userId", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "userProfile",
+      "description": "User custom metadata and active settings"
+    },
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": "task",
+      "description": "User task item list"
+    },
+    "/users/{userId}/focusLogs/{logId}": {
+      "schema": "focusLog",
+      "description": "User focus logs and notes tracker"
+    }
+  }
+}
