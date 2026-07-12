@@ -10,6 +10,7 @@ import Cart from './pages/Cart';
 import Profile from './pages/Profile';
 import Admin from './pages/Admin';
 import Subscription from './pages/Subscription';
+import Analytics from './pages/Analytics';
 import { Loader2 } from 'lucide-react';
 
 function PublicHome() {
@@ -31,17 +32,6 @@ function PublicHome() {
   return <LandingPage />;
 }
 
-function ComingSoon({ title }: { title: string }) {
-  return (
-    <div className="p-6 md:p-8 max-w-3xl mx-auto">
-      <h1 className="font-heading text-3xl font-bold text-zinc-900 mb-2">{title}</h1>
-      <div className="bg-white rounded-2xl shadow-soft p-12 text-center">
-        <p className="text-zinc-500">This section is coming soon — we're building it next.</p>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   return (
     <AuthProvider>
@@ -56,7 +46,7 @@ export default function App() {
             <Route path="/cart" element={<Cart />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/manage-jobs" element={<ProtectedRoute allowedRoles={['superadmin', 'manager']}><ManageJobs /></ProtectedRoute>} />
-            <Route path="/analytics" element={<ProtectedRoute allowedRoles={['superadmin', 'manager']}><ComingSoon title="Analytics" /></ProtectedRoute>} />
+            <Route path="/analytics" element={<ProtectedRoute allowedRoles={['superadmin', 'manager']}><Analytics /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute allowedRoles={['superadmin']}><Admin /></ProtectedRoute>} />
           </Route>
 
