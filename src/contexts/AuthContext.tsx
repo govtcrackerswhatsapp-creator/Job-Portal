@@ -25,11 +25,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const userSnap = await getDoc(userRef);
 
           if (userSnap.exists()) {
-            // Existing user: trust the stored role. Superadmin is set ONLY by
-            // changing role to 'superadmin' manually in the Firebase console.
-            setUser(userSnap.data() as UserProfile);
+            const data = userSnap.data() as UserProfile;
+            // Enforce suspension: a suspended manager is treated as a regular
+            // 'user' for access purposes (their stored role stays 'manager' so
+            // un-suspending restores it cleanly). Superadmin is never suspended.
+            const effective: UserProfile =
+              data.role === 'manager' && data.suspended
+                ? { ...data, role: 'user' }
+                : data;
+            setUser(effective);
           } else {
-            // First-time login: everyone starts as a regular 'user'.
             const newUser: UserProfile = {
               uid: firebaseUser.uid,
               email: firebaseUser.email || '',

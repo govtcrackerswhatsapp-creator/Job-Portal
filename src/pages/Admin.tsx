@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import PaymentSettings from '../components/PaymentSettings';
 import SubscribersManagement from '../components/SubscribersManagement';
-import { CreditCard, Users } from 'lucide-react';
+import ManagerManagement from '../components/ManagerManagement';
+import { CreditCard, Users, UserCog } from 'lucide-react';
 
-type Tab = 'plans' | 'subscribers';
+type Tab = 'subscribers' | 'managers' | 'plans';
 
 export default function Admin() {
   const [tab, setTab] = useState<Tab>('subscribers');
 
   const tabs: { id: Tab; label: string; icon: typeof Users }[] = [
     { id: 'subscribers', label: 'Subscribers', icon: Users },
+    { id: 'managers', label: 'Managers', icon: UserCog },
     { id: 'plans', label: 'Plans', icon: CreditCard },
   ];
 
@@ -20,7 +22,6 @@ export default function Admin() {
         <h1 className="font-heading text-3xl font-bold text-zinc-900">Admin Panel</h1>
       </div>
 
-      {/* Tab bar */}
       <div className="flex gap-1 mb-5 bg-white rounded-xl p-1 shadow-soft w-fit flex-wrap">
         {tabs.map((t) => (
           <button
@@ -37,6 +38,7 @@ export default function Admin() {
 
       <div className="bg-white rounded-2xl shadow-soft p-6">
         {tab === 'subscribers' && <SubscribersManagement />}
+        {tab === 'managers' && <ManagerManagement />}
         {tab === 'plans' && <PaymentSettings />}
       </div>
     </div>
