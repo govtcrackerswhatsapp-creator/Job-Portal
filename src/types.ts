@@ -107,20 +107,11 @@ export interface FooterLink {
   url: string;
 }
 
-// A review card shown in the Reviews section (admin-editable).
 export interface Review {
   name: string;
   title: string;
-  stars: number;   // 1-5
+  stars: number;
   text: string;
-}
-
-// A community/social link shown in the Community section (admin-editable).
-export interface CommunityLink {
-  platform: string;   // display name, e.g. "Instagram"
-  icon: string;       // icon key, e.g. "instagram"
-  url: string;
-  handle?: string;    // optional, e.g. "@teckosh"
 }
 
 export interface LandingSettings {
@@ -133,6 +124,10 @@ export interface LandingSettings {
   logoSizeFooter: number;
   navBgColor: string;
   navTextColor: string;
+  // Sign-in button (separate from nav text)
+  signInButtonText: string;
+  signInBtnBgColor: string;
+  signInBtnTextColor: string;
   heroBadge: string;
   heroHeadline: string;
   heroHeadlineAccent: string;
@@ -147,11 +142,8 @@ export interface LandingSettings {
   heroPaddingY: number;
   featuresTitle: string;
   features: LandingFeature[];
-  // Community section
   communityTitle: string;
   communitySubtext: string;
-  communityLinks: CommunityLink[];
-  // Reviews section
   reviewsTitle: string;
   reviews: Review[];
   footerContactEmail: string;

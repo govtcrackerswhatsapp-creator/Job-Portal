@@ -167,8 +167,18 @@ export default function DesignSettings() {
           <p className="text-xs text-zinc-500">Leave colors on "Default" to keep the current translucent white nav.</p>
           <div className="grid sm:grid-cols-2 gap-3">
             <ColorField label="Nav background color" value={form.navBgColor} onChange={(v) => set('navBgColor', v)} allowClear />
-            <ColorField label="Nav text / button color" value={form.navTextColor} onChange={(v) => set('navTextColor', v)} allowClear />
+            <ColorField label="Nav links text color" value={form.navTextColor} onChange={(v) => set('navTextColor', v)} allowClear />
           </div>
+        </Section>
+
+        <Section title="Sign-in Button">
+          <p className="text-xs text-zinc-500">The button in the top-right of the nav. Leave colors on "Default" to keep the current white button.</p>
+          <Row label="Button text"><input className={inputCls} value={form.signInButtonText} onChange={(e) => set('signInButtonText', e.target.value)} placeholder="Sign in" /></Row>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <ColorField label="Button background color" value={form.signInBtnBgColor} onChange={(v) => set('signInBtnBgColor', v)} allowClear />
+            <ColorField label="Button text color" value={form.signInBtnTextColor} onChange={(v) => set('signInBtnTextColor', v)} allowClear />
+          </div>
+          <p className="text-xs text-zinc-400">The Google icon keeps its official colors. Your text color applies to the button label.</p>
         </Section>
 
         <Section title="Hero Section">

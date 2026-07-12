@@ -12,6 +12,9 @@ export const DEFAULT_LANDING: LandingSettings = {
   logoSizeFooter: 28,
   navBgColor: '',
   navTextColor: '',
+  signInButtonText: 'Sign in',
+  signInBtnBgColor: '',
+  signInBtnTextColor: '',
   heroBadge: 'Never miss a job notification again',
   heroHeadline: 'Your gateway to the latest',
   heroHeadlineAccent: 'government & private jobs',
@@ -31,11 +34,8 @@ export const DEFAULT_LANDING: LandingSettings = {
     { icon: 'book-open', title: 'Study Material', description: 'Curated resources and preparation tips to help you succeed.' },
     { icon: 'clock', title: 'Never Miss Deadlines', description: 'Clear application windows so you always apply on time.' },
   ],
-  // Community — empty by default (section hides until you add links)
   communityTitle: 'Join our community',
   communitySubtext: 'Follow us for instant job alerts, preparation tips, and important exam updates.',
-  communityLinks: [],
-  // Reviews — empty by default (section hides until you add reviews)
   reviewsTitle: 'Trusted by job seekers',
   reviews: [],
   footerContactEmail: '',
