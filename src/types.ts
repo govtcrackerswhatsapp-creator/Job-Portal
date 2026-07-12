@@ -27,9 +27,9 @@ export interface Job {
   title: string;
   category: JobCategory;
   ageLimit: string;
-  notificationDate: string;
-  applicationStartDate: string;
-  applicationEndDate: string;
+  notificationDate: number | null;
+  applicationStartDate: number | null;
+  applicationEndDate: number | null;
   educationalQualification: string;
   examDetails?: string;
   studyMaterial?: string;

@@ -6,13 +6,26 @@ import { Job, JobCategory, JobSection } from '../types';
 import { categoryBadgeClass, categoryLabel, formatDate } from '../lib/format';
 import { Plus, Pencil, Trash2, X, Loader2, Save, Briefcase } from 'lucide-react';
 
-const EMPTY_JOB: Omit<Job, 'createdAt' | 'createdBy'> = {
+interface JobFormState {
+  title: string;
+  category: JobCategory;
+  ageLimit: string;
+  notificationDate: number | null;
+  applicationStartDate: number | null;
+  applicationEndDate: number | null;
+  educationalQualification: string;
+  examDetails: string;
+  studyMaterial: string;
+  customSections: JobSection[];
+}
+
+const EMPTY_JOB: JobFormState = {
   title: '',
   category: 'government',
   ageLimit: '',
-  notificationDate: '',
-  applicationStartDate: '',
-  applicationEndDate: '',
+  notificationDate: null,
+  applicationStartDate: null,
+  applicationEndDate: null,
   educationalQualification: '',
   examDetails: '',
   studyMaterial: '',
@@ -20,6 +33,23 @@ const EMPTY_JOB: Omit<Job, 'createdAt' | 'createdBy'> = {
 };
 
 const inputCls = 'w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30 focus:border-[#8b2df2] bg-white';
+
+// Convert a stored timestamp (ms) to the YYYY-MM-DD string a date input needs.
+function dateToInput(ms: number | null): string {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Convert a YYYY-MM-DD string from the date input into a timestamp (ms), or null if empty.
+function inputToTimestamp(value: string): number | null {
+  if (!value) return null;
+  const ms = new Date(value + 'T00:00:00').getTime();
+  return isNaN(ms) ? null : ms;
+}
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -37,7 +67,7 @@ export default function ManageJobs() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<Omit<Job, 'createdAt' | 'createdBy'>>({ ...EMPTY_JOB });
+  const [form, setForm] = useState<JobFormState>({ ...EMPTY_JOB });
 
   useEffect(() => {
     fetchJobs();
@@ -69,9 +99,9 @@ export default function ManageJobs() {
       title: job.title,
       category: job.category,
       ageLimit: job.ageLimit,
-      notificationDate: job.notificationDate,
-      applicationStartDate: job.applicationStartDate,
-      applicationEndDate: job.applicationEndDate,
+      notificationDate: job.notificationDate ?? null,
+      applicationStartDate: job.applicationStartDate ?? null,
+      applicationEndDate: job.applicationEndDate ?? null,
       educationalQualification: job.educationalQualification,
       examDetails: job.examDetails || '',
       studyMaterial: job.studyMaterial || '',
@@ -81,14 +111,14 @@ export default function ManageJobs() {
     setShowForm(true);
   };
 
-  const addSection = () => setForm({ ...form, customSections: [...(form.customSections || []), { title: '', content: '' }] });
+  const addSection = () => setForm({ ...form, customSections: [...form.customSections, { title: '', content: '' }] });
   const updateSection = (i: number, field: keyof JobSection, value: string) => {
-    const sections = [...(form.customSections || [])];
+    const sections = [...form.customSections];
     sections[i] = { ...sections[i], [field]: value };
     setForm({ ...form, customSections: sections });
   };
   const removeSection = (i: number) => {
-    const sections = [...(form.customSections || [])];
+    const sections = [...form.customSections];
     sections.splice(i, 1);
     setForm({ ...form, customSections: sections });
   };
@@ -101,7 +131,7 @@ export default function ManageJobs() {
     }
     try {
       setSaving(true);
-      const cleanSections = (form.customSections || []).filter((s) => s.title.trim() || s.content.trim());
+      const cleanSections = form.customSections.filter((s) => s.title.trim() || s.content.trim());
       const payload = { ...form, customSections: cleanSections };
 
       if (editingId) {
@@ -172,13 +202,13 @@ export default function ManageJobs() {
 
             <div className="grid sm:grid-cols-3 gap-4">
               <Field label="Notification Date">
-                <input className={inputCls} value={form.notificationDate} onChange={(e) => setForm({ ...form, notificationDate: e.target.value })} placeholder="e.g. 01 Aug 2026" />
+                <input type="date" className={inputCls} value={dateToInput(form.notificationDate)} onChange={(e) => setForm({ ...form, notificationDate: inputToTimestamp(e.target.value) })} />
               </Field>
               <Field label="Application Start">
-                <input className={inputCls} value={form.applicationStartDate} onChange={(e) => setForm({ ...form, applicationStartDate: e.target.value })} placeholder="e.g. 05 Aug 2026" />
+                <input type="date" className={inputCls} value={dateToInput(form.applicationStartDate)} onChange={(e) => setForm({ ...form, applicationStartDate: inputToTimestamp(e.target.value) })} />
               </Field>
               <Field label="Application End">
-                <input className={inputCls} value={form.applicationEndDate} onChange={(e) => setForm({ ...form, applicationEndDate: e.target.value })} placeholder="e.g. 30 Aug 2026" />
+                <input type="date" className={inputCls} value={dateToInput(form.applicationEndDate)} onChange={(e) => setForm({ ...form, applicationEndDate: inputToTimestamp(e.target.value) })} />
               </Field>
             </div>
 
@@ -206,7 +236,7 @@ export default function ManageJobs() {
                 </button>
               </div>
               <div className="space-y-3">
-                {(form.customSections || []).map((section, i) => (
+                {form.customSections.map((section, i) => (
                   <div key={i} className="bg-zinc-50 rounded-xl p-3 border border-zinc-100">
                     <div className="flex items-center gap-2 mb-2">
                       <input className={inputCls + ' flex-1'} value={section.title} onChange={(e) => updateSection(i, 'title', e.target.value)} placeholder="Section title" />
@@ -215,7 +245,7 @@ export default function ManageJobs() {
                     <textarea className={inputCls} rows={2} value={section.content} onChange={(e) => updateSection(i, 'content', e.target.value)} placeholder="Section content" />
                   </div>
                 ))}
-                {(form.customSections || []).length === 0 && (
+                {form.customSections.length === 0 && (
                   <p className="text-sm text-zinc-400">No custom sections. Add one for extra info like selection process, fees, etc.</p>
                 )}
               </div>
@@ -246,7 +276,7 @@ export default function ManageJobs() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${categoryBadgeClass(job.category)}`}>{categoryLabel(job.category)}</span>
-                      <span className="text-xs text-zinc-400">Ends: {job.applicationEndDate || '—'}</span>
+                      <span className="text-xs text-zinc-400">Ends: {formatDate(job.applicationEndDate) || '—'}</span>
                     </div>
                     <h3 className="font-semibold text-zinc-900 truncate">{job.title}</h3>
                     <p className="text-xs text-zinc-400 mt-1">Added {formatDate(job.createdAt)}</p>
