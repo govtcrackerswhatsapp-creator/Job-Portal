@@ -25,39 +25,57 @@ export default function LandingPage() {
     }
   };
 
-  const Brand = ({ dark = false }: { dark?: boolean }) => (
+  const hasLogo = !!settings.logoUrl?.trim();
+
+  // Brand block, used in nav and footer. `logoSize` and `dark` differ per location.
+  const Brand = ({ logoSize, dark = false }: { logoSize: number; dark?: boolean }) => (
     <div className="flex items-center gap-2">
-      <Briefcase className="w-7 h-7 text-[#8b2df2]" />
+      {hasLogo ? (
+        <img src={settings.logoUrl} alt="Logo" style={{ height: `${logoSize}px`, width: 'auto' }} className="object-contain" />
+      ) : (
+        <Briefcase className="w-7 h-7 text-[#8b2df2]" />
+      )}
       <span className="font-heading text-xl font-bold">
-        <span className={dark ? 'text-white' : 'text-zinc-900'}>{settings.brandNameStart}</span>
-        <span className="bg-gradient-to-r from-[#8b2df2] to-[#00b4d8] bg-clip-text text-transparent">{settings.brandNameEnd}</span>
+        <span style={{ color: settings.brandColorStart || (dark ? '#ffffff' : '#18181b') }}>{settings.brandNameStart}</span>
+        <span style={{ color: settings.brandColorEnd || '#8b2df2' }}>{settings.brandNameEnd}</span>
       </span>
     </div>
   );
 
   const footerLinks = (settings.footerLinks || []).filter((l) => l.label.trim() && l.url.trim());
 
+  // Nav styling: use admin colors if set, else keep the default translucent white nav.
+  const navHasCustomBg = !!settings.navBgColor?.trim();
+  const navStyle: React.CSSProperties = navHasCustomBg ? { backgroundColor: settings.navBgColor } : {};
+  const navClass = navHasCustomBg
+    ? 'sticky top-0 z-30 border-b border-black/5'
+    : 'sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-zinc-100';
+  const navTextColor = settings.navTextColor?.trim() || '';
+
   return (
     <div className="min-h-screen bg-[#f5f5f7]">
-      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-zinc-100">
+      {/* Nav */}
+      <header className={navClass} style={navStyle}>
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-          <Brand />
+          <Brand logoSize={settings.logoSizeNav ?? 32} />
           <button
             onClick={handleSignIn}
             className="inline-flex items-center gap-2 bg-white border border-zinc-200 shadow-soft hover:shadow-soft-hover rounded-full px-5 py-2 text-sm font-medium text-zinc-700 transition"
+            style={navTextColor ? { color: navTextColor } : undefined}
           >
-            <LogIn className="w-4 h-4 text-[#8b2df2]" /> Sign in with Google
+            <LogIn className="w-4 h-4" style={{ color: navTextColor || '#8b2df2' }} /> Sign in with Google
           </button>
         </div>
       </header>
 
-      <Hero settings={settings} onSignIn={handleSignIn} />
+      <Hero settings={settings} />
       <Features settings={settings} />
       <PlansPreview onSignIn={handleSignIn} />
 
+      {/* Footer */}
       <footer className="bg-zinc-900 text-zinc-400 py-10">
         <div className="max-w-5xl mx-auto px-4 text-center">
-          <div className="flex items-center justify-center mb-4"><Brand dark /></div>
+          <div className="flex items-center justify-center mb-4"><Brand logoSize={settings.logoSizeFooter ?? 28} dark /></div>
 
           {(settings.footerContactEmail || settings.footerContactPhone) && (
             <div className="flex items-center justify-center gap-6 mb-4 flex-wrap text-sm">
@@ -74,7 +92,6 @@ export default function LandingPage() {
             </div>
           )}
 
-          {/* Custom footer links — admin sets label + URL each */}
           {footerLinks.length > 0 && (
             <div className="flex items-center justify-center gap-5 mb-4 flex-wrap text-sm">
               {footerLinks.map((l, i) => (

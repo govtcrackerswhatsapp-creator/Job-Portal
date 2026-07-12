@@ -5,6 +5,13 @@ import { LandingSettings, FooterLink } from '../types';
 export const DEFAULT_LANDING: LandingSettings = {
   brandNameStart: 'Tec',
   brandNameEnd: 'Kosh',
+  brandColorStart: '#18181b',   // near-black (matches current "Tec")
+  brandColorEnd: '#8b2df2',     // purple (the gradient look is approximated by a solid; see note)
+  logoUrl: '',
+  logoSizeNav: 32,
+  logoSizeFooter: 28,
+  navBgColor: '',               // blank = keep current translucent white nav
+  navTextColor: '',             // blank = keep current default text color
   heroBadge: 'Never miss a job notification again',
   heroHeadline: 'Your gateway to the latest',
   heroHeadlineAccent: 'government & private jobs',
@@ -12,8 +19,8 @@ export const DEFAULT_LANDING: LandingSettings = {
   heroCtaText: 'Get Started Free',
   heroImages: [],
   heroImageInterval: 5,
-  heroOverlayOpacity: 40,   // lighter than before, so images show clearly
-  heroBlur: 0,              // crisp by default
+  heroOverlayOpacity: 40,
+  heroBlur: 0,
   heroImagePosition: 'center',
   heroMinHeight: 520,
   heroPaddingY: 64,

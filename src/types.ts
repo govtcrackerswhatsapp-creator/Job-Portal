@@ -110,6 +110,16 @@ export interface FooterLink {
 export interface LandingSettings {
   brandNameStart: string;
   brandNameEnd: string;
+  // Brand text colors
+  brandColorStart: string;      // color for the first part ("Tec")
+  brandColorEnd: string;        // color for the second part ("Kosh")
+  // Brand logo
+  logoUrl: string;              // image URL; if set, replaces the briefcase icon
+  logoSizeNav: number;          // logo height in nav (px)
+  logoSizeFooter: number;       // logo height in footer (px)
+  // Nav colors
+  navBgColor: string;           // nav background; blank = default translucent white
+  navTextColor: string;         // nav text/button color; blank = default
   heroBadge: string;
   heroHeadline: string;
   heroHeadlineAccent: string;
@@ -117,12 +127,11 @@ export interface LandingSettings {
   heroCtaText: string;
   heroImages: string[];
   heroImageInterval: number;
-  // Hero display controls
-  heroOverlayOpacity: number;   // 0-100 (white overlay strength; lower = image more visible)
-  heroBlur: number;             // px of backdrop blur (0 = crisp)
-  heroImagePosition: string;    // 'center' | 'top' | 'bottom'
-  heroMinHeight: number;        // min hero height in px
-  heroPaddingY: number;         // top/bottom padding in px
+  heroOverlayOpacity: number;
+  heroBlur: number;
+  heroImagePosition: string;
+  heroMinHeight: number;
+  heroPaddingY: number;
   featuresTitle: string;
   features: LandingFeature[];
   footerContactEmail: string;

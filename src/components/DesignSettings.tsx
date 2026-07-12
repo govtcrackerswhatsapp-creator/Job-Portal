@@ -25,6 +25,22 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
+// Small color-picker row: swatch + hex text, with a clear-to-default button.
+function ColorField({ label, value, onChange, allowClear = false }: { label: string; value: string; onChange: (v: string) => void; allowClear?: boolean }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-zinc-700 mb-1">{label}</label>
+      <div className="flex items-center gap-2">
+        <input type="color" value={value || '#000000'} onChange={(e) => onChange(e.target.value)} className="w-10 h-10 rounded-lg border border-zinc-200 bg-white cursor-pointer p-0.5" />
+        <input className={inputCls + ' flex-1'} value={value} onChange={(e) => onChange(e.target.value)} placeholder="#000000" />
+        {allowClear && value && (
+          <button onClick={() => onChange('')} className="text-xs text-zinc-500 hover:text-zinc-800 underline shrink-0">Default</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function DesignSettings() {
   const [form, setForm] = useState<LandingSettings>(DEFAULT_LANDING);
   const [loading, setLoading] = useState(true);
@@ -88,6 +104,8 @@ export default function DesignSettings() {
         heroBlur: Math.max(0, Number(form.heroBlur) || 0),
         heroMinHeight: Math.max(300, Number(form.heroMinHeight) || 520),
         heroPaddingY: Math.max(0, Number(form.heroPaddingY) || 64),
+        logoSizeNav: Math.max(16, Math.min(72, Number(form.logoSizeNav) || 32)),
+        logoSizeFooter: Math.max(16, Math.min(72, Number(form.logoSizeFooter) || 28)),
         footerLinks: (form.footerLinks || []).filter((l) => l.label.trim() && l.url.trim()),
       };
       await setDoc(doc(db, 'settings', 'landing'), cleaned, { merge: true });
@@ -121,10 +139,41 @@ export default function DesignSettings() {
       </div>
 
       <div className="space-y-4">
+        {/* Branding */}
         <Section title="Branding">
           <div className="grid sm:grid-cols-2 gap-3">
             <Row label="Brand name (first part)"><input className={inputCls} value={form.brandNameStart} onChange={(e) => set('brandNameStart', e.target.value)} placeholder="Tec" /></Row>
-            <Row label="Brand name (colored part)"><input className={inputCls} value={form.brandNameEnd} onChange={(e) => set('brandNameEnd', e.target.value)} placeholder="Kosh" /></Row>
+            <Row label="Brand name (second part)"><input className={inputCls} value={form.brandNameEnd} onChange={(e) => set('brandNameEnd', e.target.value)} placeholder="Kosh" /></Row>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <ColorField label="First part color" value={form.brandColorStart} onChange={(v) => set('brandColorStart', v)} />
+            <ColorField label="Second part color" value={form.brandColorEnd} onChange={(v) => set('brandColorEnd', v)} />
+          </div>
+          <p className="text-xs text-zinc-400">Preview: <span style={{ color: form.brandColorStart || '#18181b', fontWeight: 700 }}>{form.brandNameStart}</span><span style={{ color: form.brandColorEnd || '#8b2df2', fontWeight: 700 }}>{form.brandNameEnd}</span></p>
+        </Section>
+
+        {/* Logo */}
+        <Section title="Brand Logo">
+          <p className="text-xs text-zinc-500">Paste an image URL (host it free on ImgBB, filename with no spaces/special characters). If set, it replaces the default icon before your brand name — in both the nav and footer.</p>
+          <Row label="Logo image URL (blank = use default icon)">
+            <input className={inputCls} value={form.logoUrl} onChange={(e) => set('logoUrl', e.target.value)} placeholder="https://i.ibb.co/..." />
+          </Row>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Row label={`Logo size in navigation (${form.logoSizeNav ?? 32}px)`}>
+              <input type="range" min="16" max="72" className="w-full accent-[#8b2df2]" value={form.logoSizeNav ?? 32} onChange={(e) => set('logoSizeNav', Number(e.target.value))} />
+            </Row>
+            <Row label={`Logo size in footer (${form.logoSizeFooter ?? 28}px)`}>
+              <input type="range" min="16" max="72" className="w-full accent-[#8b2df2]" value={form.logoSizeFooter ?? 28} onChange={(e) => set('logoSizeFooter', Number(e.target.value))} />
+            </Row>
+          </div>
+        </Section>
+
+        {/* Navigation bar */}
+        <Section title="Navigation Bar">
+          <p className="text-xs text-zinc-500">Leave colors on "Default" to keep the current translucent white nav.</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <ColorField label="Nav background color" value={form.navBgColor} onChange={(v) => set('navBgColor', v)} allowClear />
+            <ColorField label="Nav text / button color" value={form.navTextColor} onChange={(v) => set('navTextColor', v)} allowClear />
           </div>
         </Section>
 
@@ -141,8 +190,6 @@ export default function DesignSettings() {
           <Row label="Seconds between image changes">
             <input type="number" min="1" className={inputCls + ' w-40'} value={form.heroImageInterval} onChange={(e) => set('heroImageInterval', Number(e.target.value))} />
           </Row>
-
-          {/* Hero display controls */}
           <div className="grid sm:grid-cols-2 gap-3 pt-1">
             <Row label={`Image fade / overlay (${form.heroOverlayOpacity ?? 40}%) — lower = clearer image`}>
               <input type="range" min="0" max="100" className="w-full accent-[#8b2df2]" value={form.heroOverlayOpacity ?? 40} onChange={(e) => set('heroOverlayOpacity', Number(e.target.value))} />
@@ -166,7 +213,6 @@ export default function DesignSettings() {
               <input type="range" min="16" max="160" step="4" className="w-full accent-[#8b2df2]" value={form.heroPaddingY ?? 64} onChange={(e) => set('heroPaddingY', Number(e.target.value))} />
             </Row>
           </div>
-
           <div className="space-y-2 pt-2">
             {images.map((url, i) => (
               <div key={i} className="flex items-center gap-2">
@@ -209,7 +255,7 @@ export default function DesignSettings() {
 
           <div className="pt-2">
             <label className="block text-sm font-medium text-zinc-700 mb-1">Footer Links</label>
-            <p className="text-xs text-zinc-500 mb-2">Add links like "Privacy Policy", "Refund Policy", "About Us". Set the visible text and the URL where the document is hosted (Google Drive, hosted PDF, etc.). Opens in a new tab.</p>
+            <p className="text-xs text-zinc-500 mb-2">Add links like "Privacy Policy", "Refund Policy", "About Us". Set the visible text and the URL where the document is hosted. Opens in a new tab.</p>
             <div className="space-y-2">
               {links.map((l, i) => (
                 <div key={i} className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
