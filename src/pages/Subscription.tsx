@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db } from '../lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
+import { getPlans } from '../lib/plansData';
 import { grantAccess } from '../lib/subscription';
 import { SubscriptionPlan } from '../types';
 import { formatRupees } from '../lib/format';
@@ -37,14 +36,8 @@ export default function Subscription() {
   const load = async () => {
     try {
       setLoading(true);
-      const snap = await getDocs(collection(db, 'plans'));
-      const list: SubscriptionPlan[] = [];
-      snap.forEach((d) => {
-        const p = { id: d.id, ...(d.data() as SubscriptionPlan) };
-        if (p.active) list.push(p);
-      });
-      list.sort((a, b) => a.price - b.price);
-      setPlans(list);
+      const all = await getPlans(); // cached
+      setPlans(all.filter((p) => p.active).sort((a, b) => a.price - b.price));
     } catch (e) {
       console.error('Error loading plans:', e);
     } finally {
@@ -69,7 +62,6 @@ export default function Subscription() {
       const ok = await loadRazorpay();
       if (!ok) { showToast('err', 'Could not load payment gateway. Try again.'); return; }
 
-      // 1) Create order server-side (price validated on the server).
       const orderResp = await fetch('/api/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -80,7 +72,6 @@ export default function Subscription() {
 
       const keyId = import.meta.env.VITE_RAZORPAY_KEY_ID as string;
 
-      // 2) Open Razorpay checkout.
       const rzp = new window.Razorpay({
         key: keyId,
         amount: order.amount,
@@ -92,7 +83,6 @@ export default function Subscription() {
         theme: { color: '#8b2df2' },
         handler: async (response: any) => {
           try {
-            // 3) Verify signature server-side.
             const verifyResp = await fetch('/api/verify-payment', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -101,7 +91,6 @@ export default function Subscription() {
             const verify = await verifyResp.json();
             if (!verify.success) { showToast('err', 'Payment could not be verified. Contact support.'); return; }
 
-            // 4) Grant access (Option 1: client-side via the grant boundary).
             await grantAccess(user, plan, cycle, {
               orderId: response.razorpay_order_id,
               paymentId: response.razorpay_payment_id,

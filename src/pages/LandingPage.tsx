@@ -35,9 +35,10 @@ export default function LandingPage() {
     </div>
   );
 
+  const footerLinks = (settings.footerLinks || []).filter((l) => l.label.trim() && l.url.trim());
+
   return (
     <div className="min-h-screen bg-[#f5f5f7]">
-      {/* Nav */}
       <header className="sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-zinc-100">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <Brand />
@@ -54,12 +55,10 @@ export default function LandingPage() {
       <Features settings={settings} />
       <PlansPreview onSignIn={handleSignIn} />
 
-      {/* Footer */}
       <footer className="bg-zinc-900 text-zinc-400 py-10">
         <div className="max-w-5xl mx-auto px-4 text-center">
           <div className="flex items-center justify-center mb-4"><Brand dark /></div>
 
-          {/* Contact — each hidden if blank */}
           {(settings.footerContactEmail || settings.footerContactPhone) && (
             <div className="flex items-center justify-center gap-6 mb-4 flex-wrap text-sm">
               {settings.footerContactEmail && (
@@ -75,11 +74,12 @@ export default function LandingPage() {
             </div>
           )}
 
-          {/* Policy links — hidden if blank */}
-          {(settings.privacyUrl || settings.termsUrl) && (
-            <div className="flex items-center justify-center gap-5 mb-4 text-sm">
-              {settings.privacyUrl && <a href={settings.privacyUrl} target="_blank" rel="noopener noreferrer" className="hover:text-white transition">Privacy Policy</a>}
-              {settings.termsUrl && <a href={settings.termsUrl} target="_blank" rel="noopener noreferrer" className="hover:text-white transition">Terms of Service</a>}
+          {/* Custom footer links — admin sets label + URL each */}
+          {footerLinks.length > 0 && (
+            <div className="flex items-center justify-center gap-5 mb-4 flex-wrap text-sm">
+              {footerLinks.map((l, i) => (
+                <a key={i} href={l.url} target="_blank" rel="noopener noreferrer" className="hover:text-white transition">{l.label}</a>
+              ))}
             </div>
           )}
 

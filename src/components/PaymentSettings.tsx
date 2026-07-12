@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { db } from '../lib/firebase';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { SubscriptionPlan } from '../types';
 import { formatRupees } from '../lib/format';
+import { getPlans, clearPlansCache } from '../lib/plansData';
 import { Plus, Pencil, Trash2, X, Loader2, Save, IndianRupee } from 'lucide-react';
 
 interface PlanForm {
@@ -33,9 +34,7 @@ export default function PaymentSettings() {
   const fetchPlans = async () => {
     try {
       setLoading(true);
-      const snap = await getDocs(collection(db, 'plans'));
-      const list: SubscriptionPlan[] = [];
-      snap.forEach((d) => list.push({ id: d.id, ...(d.data() as SubscriptionPlan) }));
+      const list = await getPlans(true); // fresh for the admin view
       setPlans(list);
     } catch (e) {
       console.error('Error fetching plans:', e);
@@ -85,6 +84,7 @@ export default function PaymentSettings() {
       } else {
         await addDoc(collection(db, 'plans'), payload);
       }
+      clearPlansCache();
       setShowForm(false);
       await fetchPlans();
     } catch (e) {
@@ -99,6 +99,7 @@ export default function PaymentSettings() {
     if (!id || !confirm('Delete this plan?')) return;
     try {
       await deleteDoc(doc(db, 'plans', id));
+      clearPlansCache();
       await fetchPlans();
     } catch (e) {
       console.error('Error deleting plan:', e);

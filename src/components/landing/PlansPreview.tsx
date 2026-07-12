@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { db } from '../../lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { getPlans } from '../../lib/plansData';
 import { SubscriptionPlan } from '../../types';
 import { formatRupees } from '../../lib/format';
 import { Check, Loader2, Crown } from 'lucide-react';
@@ -12,14 +11,8 @@ export default function PlansPreview({ onSignIn }: { onSignIn: () => void }) {
   useEffect(() => {
     (async () => {
       try {
-        const snap = await getDocs(collection(db, 'plans'));
-        const list: SubscriptionPlan[] = [];
-        snap.forEach((d) => {
-          const p = { id: d.id, ...(d.data() as SubscriptionPlan) };
-          if (p.active) list.push(p);
-        });
-        list.sort((a, b) => a.price - b.price);
-        setPlans(list);
+        const all = await getPlans(); // cached
+        setPlans(all.filter((p) => p.active).sort((a, b) => a.price - b.price));
       } catch (e) {
         console.error('Error loading plans:', e);
       } finally {

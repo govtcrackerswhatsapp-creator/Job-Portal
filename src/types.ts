@@ -79,16 +79,33 @@ export interface SocialLink {
   enabled: boolean;
 }
 
+export type MaintenanceAudience = 'users' | 'users_and_managers';
+export type MaintenanceMode = 'manual' | 'onetime' | 'daily';
+
 export interface AppSettings {
   allowManagerAnalytics?: boolean;
   maintenanceMode?: boolean;
   maintenanceMessage?: string;
+  maintenanceAudience?: MaintenanceAudience;
+  maintenanceScheduleMode?: MaintenanceMode;
+  maintenanceStart?: string;
+  maintenanceEnd?: string;
+  maintenanceDailyStartTime?: string;
+  maintenanceDailyEndTime?: string;
+  maintenanceDailyFrom?: string;
+  maintenanceDailyTo?: string;
 }
 
 export interface LandingFeature {
   icon: string;
   title: string;
   description: string;
+}
+
+// A custom footer link: editable label + hosted URL.
+export interface FooterLink {
+  label: string;
+  url: string;
 }
 
 export interface LandingSettings {
@@ -106,6 +123,8 @@ export interface LandingSettings {
   footerContactEmail: string;
   footerContactPhone: string;
   footerCopyright: string;
-  privacyUrl: string;
-  termsUrl: string;
+  footerLinks: FooterLink[];
+  // Kept for backward-compatibility (older saved docs); no longer edited directly.
+  privacyUrl?: string;
+  termsUrl?: string;
 }

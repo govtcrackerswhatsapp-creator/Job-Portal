@@ -1,6 +1,6 @@
 import { db } from './firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import { LandingSettings } from '../types';
+import { LandingSettings, FooterLink } from '../types';
 
 export const DEFAULT_LANDING: LandingSettings = {
   brandNameStart: 'Tec',
@@ -22,30 +22,34 @@ export const DEFAULT_LANDING: LandingSettings = {
   footerContactEmail: '',
   footerContactPhone: '',
   footerCopyright: '© 2026 TecKosh. All rights reserved.',
-  privacyUrl: '',
-  termsUrl: '',
+  footerLinks: [],
 };
 
-// Lightweight in-memory cache: avoids re-reading Firestore on every landing visit.
 let cache: { data: LandingSettings; at: number } | null = null;
-const CACHE_MS = 2 * 60 * 1000; // 2 minutes
+const CACHE_MS = 2 * 60 * 1000;
 
-/** Clear the cache — call after an admin saves, so changes show immediately. */
-export function clearLandingCache() {
-  cache = null;
-}
+export function clearLandingCache() { cache = null; }
 
 /**
- * Load landing settings, merged over defaults. Uses a 2-min in-memory cache to
- * cut reads. Never throws — returns defaults on error.
+ * Load landing settings merged over defaults. Also migrates any old
+ * privacyUrl/termsUrl into the new footerLinks list if present.
  */
 export async function loadLandingSettings(force = false): Promise<LandingSettings> {
-  if (!force && cache && Date.now() - cache.at < CACHE_MS) {
-    return cache.data;
-  }
+  if (!force && cache && Date.now() - cache.at < CACHE_MS) return cache.data;
   try {
     const snap = await getDoc(doc(db, 'settings', 'landing'));
-    const data = snap.exists() ? { ...DEFAULT_LANDING, ...(snap.data() as Partial<LandingSettings>) } : DEFAULT_LANDING;
+    let data: LandingSettings = snap.exists()
+      ? { ...DEFAULT_LANDING, ...(snap.data() as Partial<LandingSettings>) }
+      : DEFAULT_LANDING;
+
+    // Migrate legacy fixed links into footerLinks (only if footerLinks is empty).
+    if ((!data.footerLinks || data.footerLinks.length === 0)) {
+      const migrated: FooterLink[] = [];
+      if (data.privacyUrl) migrated.push({ label: 'Privacy Policy', url: data.privacyUrl });
+      if (data.termsUrl) migrated.push({ label: 'Terms of Service', url: data.termsUrl });
+      if (migrated.length) data = { ...data, footerLinks: migrated };
+    }
+
     cache = { data, at: Date.now() };
     return data;
   } catch (e) {

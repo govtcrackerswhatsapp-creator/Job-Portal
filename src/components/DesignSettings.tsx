@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { LandingSettings, LandingFeature } from '../types';
+import { LandingSettings, LandingFeature, FooterLink } from '../types';
 import { DEFAULT_LANDING, clearLandingCache } from '../lib/landingSettings';
-import { Loader2, Save, Plus, Trash2, CheckCircle2, ExternalLink, Image as ImageIcon, ArrowUp, ArrowDown } from 'lucide-react';
+import { Loader2, Save, Plus, Trash2, CheckCircle2, ExternalLink, Image as ImageIcon, ArrowUp, ArrowDown, Link as LinkIcon } from 'lucide-react';
 
 const inputCls = 'w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30 focus:border-[#8b2df2] bg-white';
 const ICON_OPTIONS = ['bell', 'file-text', 'book-open', 'clock', 'shield', 'star', 'zap', 'award', 'users', 'trending-up'];
@@ -54,17 +54,27 @@ export default function DesignSettings() {
   const addFeature = () => set('features', [...form.features, { icon: 'star', title: 'New Feature', description: 'Describe this feature.' }]);
   const removeFeature = (i: number) => { const f = [...form.features]; f.splice(i, 1); set('features', f); };
 
-  // Hero images
   const images = form.heroImages || [];
   const updateImage = (i: number, value: string) => { const arr = [...images]; arr[i] = value; set('heroImages', arr); };
   const addImage = () => set('heroImages', [...images, '']);
   const removeImage = (i: number) => { const arr = [...images]; arr.splice(i, 1); set('heroImages', arr); };
   const moveImage = (i: number, dir: -1 | 1) => {
-    const arr = [...images];
-    const j = i + dir;
+    const arr = [...images]; const j = i + dir;
     if (j < 0 || j >= arr.length) return;
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-    set('heroImages', arr);
+    [arr[i], arr[j]] = [arr[j], arr[i]]; set('heroImages', arr);
+  };
+
+  // Footer links
+  const links = form.footerLinks || [];
+  const updateLink = (i: number, key: keyof FooterLink, value: string) => {
+    const arr = [...links]; arr[i] = { ...arr[i], [key]: value }; set('footerLinks', arr);
+  };
+  const addLink = () => set('footerLinks', [...links, { label: '', url: '' }]);
+  const removeLink = (i: number) => { const arr = [...links]; arr.splice(i, 1); set('footerLinks', arr); };
+  const moveLink = (i: number, dir: -1 | 1) => {
+    const arr = [...links]; const j = i + dir;
+    if (j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]]; set('footerLinks', arr);
   };
 
   const handleSave = async () => {
@@ -75,9 +85,10 @@ export default function DesignSettings() {
         features: form.features.filter((f) => f.title.trim() || f.description.trim()),
         heroImages: (form.heroImages || []).filter((u) => u.trim()),
         heroImageInterval: Math.max(1, Number(form.heroImageInterval) || 5),
+        footerLinks: (form.footerLinks || []).filter((l) => l.label.trim() && l.url.trim()),
       };
       await setDoc(doc(db, 'settings', 'landing'), cleaned, { merge: true });
-      clearLandingCache(); // so the live landing page shows changes immediately
+      clearLandingCache();
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {
@@ -122,9 +133,8 @@ export default function DesignSettings() {
           <Row label="Call-to-action button text"><input className={inputCls} value={form.heroCtaText} onChange={(e) => set('heroCtaText', e.target.value)} /></Row>
         </Section>
 
-        {/* Hero images carousel */}
         <Section title="Hero Background Images (carousel)">
-          <p className="text-xs text-zinc-500">Paste image URLs (host them free on ImgBB, Postimages, etc.). Multiple images rotate as a carousel. Leave empty for a clean gradient background.</p>
+          <p className="text-xs text-zinc-500">Paste image URLs (host them free on ImgBB, Postimages, etc.). Multiple images rotate as a carousel. Leave empty for a clean gradient.</p>
           <Row label="Seconds between image changes">
             <input type="number" min="1" className={inputCls + ' w-40'} value={form.heroImageInterval} onChange={(e) => set('heroImageInterval', Number(e.target.value))} />
           </Row>
@@ -166,11 +176,26 @@ export default function DesignSettings() {
             <Row label="Contact email (blank = hidden)"><input className={inputCls} value={form.footerContactEmail} onChange={(e) => set('footerContactEmail', e.target.value)} placeholder="support@example.com" /></Row>
             <Row label="Contact phone (blank = hidden)"><input className={inputCls} value={form.footerContactPhone} onChange={(e) => set('footerContactPhone', e.target.value)} placeholder="+91 98765 43210" /></Row>
           </div>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Row label="Privacy Policy URL (blank = hidden)"><input className={inputCls} value={form.privacyUrl} onChange={(e) => set('privacyUrl', e.target.value)} placeholder="https://..." /></Row>
-            <Row label="Terms of Service URL (blank = hidden)"><input className={inputCls} value={form.termsUrl} onChange={(e) => set('termsUrl', e.target.value)} placeholder="https://..." /></Row>
-          </div>
           <Row label="Copyright text"><input className={inputCls} value={form.footerCopyright} onChange={(e) => set('footerCopyright', e.target.value)} /></Row>
+
+          {/* Footer links — editable label + hosted URL */}
+          <div className="pt-2">
+            <label className="block text-sm font-medium text-zinc-700 mb-1">Footer Links</label>
+            <p className="text-xs text-zinc-500 mb-2">Add links like "Privacy Policy", "Refund Policy", "About Us". Set the visible text and the URL where the document is hosted (Google Drive, hosted PDF, etc.). Opens in a new tab.</p>
+            <div className="space-y-2">
+              {links.map((l, i) => (
+                <div key={i} className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                  <LinkIcon className="w-4 h-4 text-zinc-400 shrink-0" />
+                  <input className={inputCls + ' sm:w-44'} value={l.label} onChange={(e) => updateLink(i, 'label', e.target.value)} placeholder="Link text (e.g. Privacy Policy)" />
+                  <input className={inputCls + ' flex-1'} value={l.url} onChange={(e) => updateLink(i, 'url', e.target.value)} placeholder="https://... (hosted document URL)" />
+                  <button onClick={() => moveLink(i, -1)} disabled={i === 0} className="p-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30"><ArrowUp className="w-4 h-4" /></button>
+                  <button onClick={() => moveLink(i, 1)} disabled={i === links.length - 1} className="p-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30"><ArrowDown className="w-4 h-4" /></button>
+                  <button onClick={() => removeLink(i)} className="p-1.5 text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              ))}
+              <button onClick={addLink} className="inline-flex items-center gap-1 text-sm font-medium text-[#8b2df2] hover:underline"><Plus className="w-4 h-4" /> Add Footer Link</button>
+            </div>
+          </div>
         </Section>
 
         <div className="flex items-center gap-3 pt-2 sticky bottom-0 bg-white py-3">

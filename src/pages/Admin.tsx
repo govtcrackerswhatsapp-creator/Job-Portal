@@ -4,9 +4,11 @@ import SubscribersManagement from '../components/SubscribersManagement';
 import ManagerManagement from '../components/ManagerManagement';
 import DesignSettings from '../components/DesignSettings';
 import GeneralSettings from '../components/GeneralSettings';
-import { CreditCard, Users, UserCog, Palette, Settings } from 'lucide-react';
+import BackupRestore from '../components/BackupRestore';
+import DataRetention from '../components/DataRetention';
+import { CreditCard, Users, UserCog, Palette, Settings, DatabaseBackup, ShieldAlert } from 'lucide-react';
 
-type Tab = 'subscribers' | 'managers' | 'plans' | 'design' | 'general';
+type Tab = 'subscribers' | 'managers' | 'plans' | 'design' | 'general' | 'backup' | 'retention';
 
 export default function Admin() {
   const [tab, setTab] = useState<Tab>('subscribers');
@@ -17,6 +19,8 @@ export default function Admin() {
     { id: 'plans', label: 'Plans', icon: CreditCard },
     { id: 'design', label: 'Design', icon: Palette },
     { id: 'general', label: 'General', icon: Settings },
+    { id: 'backup', label: 'Backup', icon: DatabaseBackup },
+    { id: 'retention', label: 'Retention', icon: ShieldAlert },
   ];
 
   return (
@@ -46,6 +50,8 @@ export default function Admin() {
         {tab === 'plans' && <PaymentSettings />}
         {tab === 'design' && <DesignSettings />}
         {tab === 'general' && <GeneralSettings />}
+        {tab === 'backup' && <BackupRestore />}
+        {tab === 'retention' && <DataRetention />}
       </div>
     </div>
   );

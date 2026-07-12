@@ -1,18 +1,27 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { loadAppSettings, DEFAULT_APP_SETTINGS } from '../lib/appSettings';
+import { shouldBlockUser } from '../lib/maintenance';
 import { AppSettings } from '../types';
 import { Loader2, Wrench, LogOut } from 'lucide-react';
 
 export default function MaintenanceGate({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth();
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [, forceTick] = useState(0); // used to re-evaluate the schedule on the timer
 
+  // Load settings once on mount.
   useEffect(() => {
     loadAppSettings().then(setSettings).catch(() => setSettings(DEFAULT_APP_SETTINGS));
   }, []);
 
-  // While settings load, show a light loader (avoids a flash of the app during maintenance).
+  // Re-check the schedule every 60 seconds (pure clock comparison — no DB reads).
+  // This makes scheduled windows turn on/off automatically without a refresh.
+  useEffect(() => {
+    const timer = setInterval(() => forceTick((t) => t + 1), 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   if (!settings) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f5f5f7]">
@@ -21,10 +30,10 @@ export default function MaintenanceGate({ children }: { children: ReactNode }) {
     );
   }
 
-  const isStaff = user?.role === 'superadmin' || user?.role === 'manager';
+  // Evaluated on every render (including each 60s tick) against the current IST time.
+  const blocked = shouldBlockUser(settings, user?.role);
 
-  // Maintenance blocks regular users only; staff/superadmin always get through.
-  if (settings.maintenanceMode && !isStaff) {
+  if (blocked) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#f5f5f7] px-4 text-center">
         <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center mb-5">
