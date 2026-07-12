@@ -107,19 +107,32 @@ export interface FooterLink {
   url: string;
 }
 
+// A review card shown in the Reviews section (admin-editable).
+export interface Review {
+  name: string;
+  title: string;
+  stars: number;   // 1-5
+  text: string;
+}
+
+// A community/social link shown in the Community section (admin-editable).
+export interface CommunityLink {
+  platform: string;   // display name, e.g. "Instagram"
+  icon: string;       // icon key, e.g. "instagram"
+  url: string;
+  handle?: string;    // optional, e.g. "@teckosh"
+}
+
 export interface LandingSettings {
   brandNameStart: string;
   brandNameEnd: string;
-  // Brand text colors
-  brandColorStart: string;      // color for the first part ("Tec")
-  brandColorEnd: string;        // color for the second part ("Kosh")
-  // Brand logo
-  logoUrl: string;              // image URL; if set, replaces the briefcase icon
-  logoSizeNav: number;          // logo height in nav (px)
-  logoSizeFooter: number;       // logo height in footer (px)
-  // Nav colors
-  navBgColor: string;           // nav background; blank = default translucent white
-  navTextColor: string;         // nav text/button color; blank = default
+  brandColorStart: string;
+  brandColorEnd: string;
+  logoUrl: string;
+  logoSizeNav: number;
+  logoSizeFooter: number;
+  navBgColor: string;
+  navTextColor: string;
   heroBadge: string;
   heroHeadline: string;
   heroHeadlineAccent: string;
@@ -134,6 +147,13 @@ export interface LandingSettings {
   heroPaddingY: number;
   featuresTitle: string;
   features: LandingFeature[];
+  // Community section
+  communityTitle: string;
+  communitySubtext: string;
+  communityLinks: CommunityLink[];
+  // Reviews section
+  reviewsTitle: string;
+  reviews: Review[];
   footerContactEmail: string;
   footerContactPhone: string;
   footerCopyright: string;

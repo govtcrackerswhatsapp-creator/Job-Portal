@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { LandingSettings, LandingFeature, FooterLink } from '../types';
+import { LandingSettings, LandingFeature, FooterLink, Review, CommunityLink } from '../types';
 import { DEFAULT_LANDING, clearLandingCache } from '../lib/landingSettings';
-import { Loader2, Save, Plus, Trash2, CheckCircle2, ExternalLink, Image as ImageIcon, ArrowUp, ArrowDown, Link as LinkIcon } from 'lucide-react';
+import { Loader2, Save, Plus, Trash2, CheckCircle2, ExternalLink, Image as ImageIcon, ArrowUp, ArrowDown, Link as LinkIcon, Star } from 'lucide-react';
 
 const inputCls = 'w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30 focus:border-[#8b2df2] bg-white';
 const ICON_OPTIONS = ['bell', 'file-text', 'book-open', 'clock', 'shield', 'star', 'zap', 'award', 'users', 'trending-up'];
+const SOCIAL_ICON_OPTIONS = ['instagram', 'facebook', 'twitter', 'youtube', 'linkedin', 'github', 'telegram', 'whatsapp', 'globe', 'mail'];
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -25,7 +26,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-// Small color-picker row: swatch + hex text, with a clear-to-default button.
 function ColorField({ label, value, onChange, allowClear = false }: { label: string; value: string; onChange: (v: string) => void; allowClear?: boolean }) {
   return (
     <div>
@@ -92,6 +92,32 @@ export default function DesignSettings() {
     [arr[i], arr[j]] = [arr[j], arr[i]]; set('footerLinks', arr);
   };
 
+  // Community links
+  const community = form.communityLinks || [];
+  const updateCommunity = (i: number, key: keyof CommunityLink, value: string) => {
+    const arr = [...community]; arr[i] = { ...arr[i], [key]: value }; set('communityLinks', arr);
+  };
+  const addCommunity = () => set('communityLinks', [...community, { platform: '', icon: 'instagram', url: '', handle: '' }]);
+  const removeCommunity = (i: number) => { const arr = [...community]; arr.splice(i, 1); set('communityLinks', arr); };
+  const moveCommunity = (i: number, dir: -1 | 1) => {
+    const arr = [...community]; const j = i + dir;
+    if (j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]]; set('communityLinks', arr);
+  };
+
+  // Reviews
+  const reviews = form.reviews || [];
+  const updateReview = (i: number, key: keyof Review, value: string | number) => {
+    const arr = [...reviews]; arr[i] = { ...arr[i], [key]: value }; set('reviews', arr);
+  };
+  const addReview = () => set('reviews', [...reviews, { name: '', title: '', stars: 5, text: '' }]);
+  const removeReview = (i: number) => { const arr = [...reviews]; arr.splice(i, 1); set('reviews', arr); };
+  const moveReview = (i: number, dir: -1 | 1) => {
+    const arr = [...reviews]; const j = i + dir;
+    if (j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]]; set('reviews', arr);
+  };
+
   const handleSave = async () => {
     try {
       setSaving(true);
@@ -106,6 +132,8 @@ export default function DesignSettings() {
         heroPaddingY: Math.max(0, Number(form.heroPaddingY) || 64),
         logoSizeNav: Math.max(16, Math.min(72, Number(form.logoSizeNav) || 32)),
         logoSizeFooter: Math.max(16, Math.min(72, Number(form.logoSizeFooter) || 28)),
+        communityLinks: (form.communityLinks || []).filter((l) => l.platform.trim() && l.url.trim()),
+        reviews: (form.reviews || []).filter((r) => r.name.trim() && r.text.trim()).map((r) => ({ ...r, stars: Math.max(1, Math.min(5, Number(r.stars) || 5)) })),
         footerLinks: (form.footerLinks || []).filter((l) => l.label.trim() && l.url.trim()),
       };
       await setDoc(doc(db, 'settings', 'landing'), cleaned, { merge: true });
@@ -243,6 +271,64 @@ export default function DesignSettings() {
               </div>
             ))}
             <button onClick={addFeature} className="inline-flex items-center gap-1 text-sm font-medium text-[#8b2df2] hover:underline"><Plus className="w-4 h-4" /> Add Feature</button>
+          </div>
+        </Section>
+
+        {/* Community Section */}
+        <Section title="Community Section (social links)">
+          <p className="text-xs text-zinc-500">Add your social platforms. Shows as a row of icon buttons on the landing page. Leave empty to hide the section.</p>
+          <Row label="Section heading"><input className={inputCls} value={form.communityTitle} onChange={(e) => set('communityTitle', e.target.value)} placeholder="Join our community" /></Row>
+          <Row label="Subtext"><textarea className={inputCls} rows={2} value={form.communitySubtext} onChange={(e) => set('communitySubtext', e.target.value)} /></Row>
+          <div className="space-y-2 pt-1">
+            {community.map((c, i) => (
+              <div key={i} className="bg-zinc-50 rounded-lg p-3 border border-zinc-100 space-y-2">
+                <div className="flex items-center gap-2">
+                  <select className={inputCls + ' w-32'} value={c.icon} onChange={(e) => updateCommunity(i, 'icon', e.target.value)}>
+                    {SOCIAL_ICON_OPTIONS.map((ic) => <option key={ic} value={ic}>{ic}</option>)}
+                  </select>
+                  <input className={inputCls + ' flex-1'} value={c.platform} onChange={(e) => updateCommunity(i, 'platform', e.target.value)} placeholder="Platform name (e.g. Instagram)" />
+                  <button onClick={() => moveCommunity(i, -1)} disabled={i === 0} className="p-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30"><ArrowUp className="w-4 h-4" /></button>
+                  <button onClick={() => moveCommunity(i, 1)} disabled={i === community.length - 1} className="p-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30"><ArrowDown className="w-4 h-4" /></button>
+                  <button onClick={() => removeCommunity(i)} className="p-1.5 text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <input className={inputCls} value={c.handle || ''} onChange={(e) => updateCommunity(i, 'handle', e.target.value)} placeholder="Handle (optional, e.g. @teckosh)" />
+                  <input className={inputCls} value={c.url} onChange={(e) => updateCommunity(i, 'url', e.target.value)} placeholder="https://..." />
+                </div>
+              </div>
+            ))}
+            <button onClick={addCommunity} className="inline-flex items-center gap-1 text-sm font-medium text-[#8b2df2] hover:underline"><Plus className="w-4 h-4" /> Add Social Link</button>
+          </div>
+        </Section>
+
+        {/* Reviews Section */}
+        <Section title="Reviews Section">
+          <p className="text-xs text-zinc-500">Add review cards. Shows as a grid on the landing page. Leave empty to hide the section.</p>
+          <Row label="Section heading"><input className={inputCls} value={form.reviewsTitle} onChange={(e) => set('reviewsTitle', e.target.value)} placeholder="Trusted by job seekers" /></Row>
+          <div className="space-y-3 pt-1">
+            {reviews.map((r, i) => (
+              <div key={i} className="bg-zinc-50 rounded-lg p-3 border border-zinc-100 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input className={inputCls + ' flex-1'} value={r.name} onChange={(e) => updateReview(i, 'name', e.target.value)} placeholder="Reviewer name" />
+                  <input className={inputCls + ' flex-1'} value={r.title} onChange={(e) => updateReview(i, 'title', e.target.value)} placeholder="Title / role (e.g. Cleared SSC CGL)" />
+                  <button onClick={() => moveReview(i, -1)} disabled={i === 0} className="p-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30"><ArrowUp className="w-4 h-4" /></button>
+                  <button onClick={() => moveReview(i, 1)} disabled={i === reviews.length - 1} className="p-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30"><ArrowDown className="w-4 h-4" /></button>
+                  <button onClick={() => removeReview(i)} className="p-1.5 text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-500">Stars:</span>
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button key={n} onClick={() => updateReview(i, 'stars', n)} className="p-0.5" title={`${n} star${n > 1 ? 's' : ''}`}>
+                        <Star className={`w-5 h-5 ${n <= (r.stars || 5) ? 'text-amber-400 fill-current' : 'text-zinc-300'}`} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <textarea className={inputCls} rows={2} value={r.text} onChange={(e) => updateReview(i, 'text', e.target.value)} placeholder="Review text..." />
+              </div>
+            ))}
+            <button onClick={addReview} className="inline-flex items-center gap-1 text-sm font-medium text-[#8b2df2] hover:underline"><Plus className="w-4 h-4" /> Add Review</button>
           </div>
         </Section>
 

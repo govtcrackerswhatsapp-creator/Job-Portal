@@ -4,16 +4,42 @@ import { Briefcase, LogIn, Mail, Phone } from 'lucide-react';
 import Hero from '../components/landing/Hero';
 import Features from '../components/landing/Features';
 import PlansPreview from '../components/landing/PlansPreview';
+import Community from '../components/landing/Community';
+import Reviews from '../components/landing/Reviews';
 import { LandingSettings } from '../types';
 import { DEFAULT_LANDING, loadLandingSettings } from '../lib/landingSettings';
+
+const NAV_LINKS = [
+  { id: 'home', label: 'Home' },
+  { id: 'pricing', label: 'Pricing' },
+  { id: 'community', label: 'Community' },
+  { id: 'reviews', label: 'Reviews' },
+];
 
 export default function LandingPage() {
   const { signInWithGoogle } = useAuth();
   const [settings, setSettings] = useState<LandingSettings>(DEFAULT_LANDING);
+  const [activeSection, setActiveSection] = useState('home');
 
   useEffect(() => {
     loadLandingSettings().then(setSettings);
   }, []);
+
+  // Scroll-spy: highlight the nav link for the section currently in view.
+  useEffect(() => {
+    const ids = NAV_LINKS.map((l) => l.id);
+    const onScroll = () => {
+      let current = 'home';
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el && el.getBoundingClientRect().top <= 120) current = id;
+      }
+      setActiveSection(current);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [settings]);
 
   const handleSignIn = async () => {
     try {
@@ -25,9 +51,13 @@ export default function LandingPage() {
     }
   };
 
+  const scrollTo = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   const hasLogo = !!settings.logoUrl?.trim();
 
-  // Brand block, used in nav and footer. `logoSize` and `dark` differ per location.
   const Brand = ({ logoSize, dark = false }: { logoSize: number; dark?: boolean }) => (
     <div className="flex items-center gap-2">
       {hasLogo ? (
@@ -44,7 +74,6 @@ export default function LandingPage() {
 
   const footerLinks = (settings.footerLinks || []).filter((l) => l.label.trim() && l.url.trim());
 
-  // Nav styling: use admin colors if set, else keep the default translucent white nav.
   const navHasCustomBg = !!settings.navBgColor?.trim();
   const navStyle: React.CSSProperties = navHasCustomBg ? { backgroundColor: settings.navBgColor } : {};
   const navClass = navHasCustomBg
@@ -56,11 +85,27 @@ export default function LandingPage() {
     <div className="min-h-screen bg-[#f5f5f7]">
       {/* Nav */}
       <header className={navClass} style={navStyle}>
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-          <Brand logoSize={settings.logoSizeNav ?? 32} />
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
+          <button onClick={() => scrollTo('home')} className="shrink-0"><Brand logoSize={settings.logoSizeNav ?? 32} /></button>
+
+          {/* Center nav links */}
+          <nav className="hidden md:flex items-center gap-7">
+            {NAV_LINKS.map((l) => (
+              <button
+                key={l.id}
+                onClick={() => scrollTo(l.id)}
+                className="text-sm font-medium transition-colors relative py-1"
+                style={{ color: navTextColor || (activeSection === l.id ? '#8b2df2' : '#52525b') }}
+              >
+                {l.label}
+                <span className={`absolute -bottom-0.5 left-0 h-[2px] bg-[#8b2df2] transition-all duration-300 ${activeSection === l.id ? 'w-full' : 'w-0'}`} />
+              </button>
+            ))}
+          </nav>
+
           <button
             onClick={handleSignIn}
-            className="inline-flex items-center gap-2 bg-white border border-zinc-200 shadow-soft hover:shadow-soft-hover rounded-full px-5 py-2 text-sm font-medium text-zinc-700 transition"
+            className="inline-flex items-center gap-2 bg-white border border-zinc-200 shadow-soft hover:shadow-soft-hover rounded-full px-5 py-2 text-sm font-medium text-zinc-700 transition shrink-0"
             style={navTextColor ? { color: navTextColor } : undefined}
           >
             <LogIn className="w-4 h-4" style={{ color: navTextColor || '#8b2df2' }} /> Sign in with Google
@@ -68,9 +113,12 @@ export default function LandingPage() {
         </div>
       </header>
 
-      <Hero settings={settings} />
+      {/* Sections (with IDs for scroll) */}
+      <div id="home"><Hero settings={settings} /></div>
       <Features settings={settings} />
-      <PlansPreview onSignIn={handleSignIn} />
+      <div id="pricing"><PlansPreview onSignIn={handleSignIn} /></div>
+      <Community settings={settings} />
+      <Reviews settings={settings} />
 
       {/* Footer */}
       <footer className="bg-zinc-900 text-zinc-400 py-10">
