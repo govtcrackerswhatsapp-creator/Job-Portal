@@ -9,6 +9,7 @@ import JobDetails from './pages/JobDetails';
 import Cart from './pages/Cart';
 import Profile from './pages/Profile';
 import Admin from './pages/Admin';
+import Subscription from './pages/Subscription';
 import { Loader2 } from 'lucide-react';
 
 function PublicHome() {
@@ -47,6 +48,7 @@ export default function App() {
       <Router>
         <Routes>
           <Route path="/" element={<PublicHome />} />
+          <Route path="/subscribe" element={<ProtectedRoute><Subscription /></ProtectedRoute>} />
 
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route path="/dashboard" element={<Dashboard />} />
