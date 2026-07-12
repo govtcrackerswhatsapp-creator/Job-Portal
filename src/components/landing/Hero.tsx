@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { LandingSettings } from '../../types';
 
-export default function Hero({ settings, onSignIn }: { settings: LandingSettings; onSignIn: () => void }) {
+export default function Hero({ settings }: { settings: LandingSettings }) {
   const images = (settings.heroImages || []).filter((u) => u.trim());
   const [current, setCurrent] = useState(0);
 
@@ -52,15 +52,6 @@ export default function Hero({ settings, onSignIn }: { settings: LandingSettings
         {settings.heroSubtext && (
           <p className="mt-6 text-lg text-zinc-700 max-w-2xl mx-auto">{settings.heroSubtext}</p>
         )}
-        <div className="mt-8 flex items-center justify-center gap-3">
-          <button
-            onClick={onSignIn}
-            className="inline-flex items-center gap-2 bg-gradient-to-r from-[#8b2df2] to-[#00b4d8] text-white rounded-xl px-7 py-3.5 font-semibold shadow-soft hover:opacity-90 transition text-base"
-          >
-            {settings.heroCtaText || 'Get Started'} <ArrowRight className="w-5 h-5" />
-          </button>
-        </div>
-        <p className="mt-4 text-sm text-zinc-500">Sign in with Google — free to browse.</p>
 
         {images.length > 1 && (
           <div className="flex items-center justify-center gap-2 mt-8">
