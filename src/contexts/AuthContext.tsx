@@ -35,10 +35,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 : data;
             setUser(effective);
           } else {
+            // First login: check the admin-controlled manager_invites list.
+            // If this email was pre-authorized by the superadmin, create them
+            // as a 'manager'; otherwise create a normal 'user'. This is a single
+            // direct document read (cheapest possible), keyed by email.
+            const email = firebaseUser.email || '';
+            let invitedAsManager = false;
+            if (email) {
+              try {
+                const inviteSnap = await getDoc(doc(db, 'manager_invites', email));
+                invitedAsManager = inviteSnap.exists();
+              } catch (e) {
+                console.error('AuthContext: manager invite check failed (defaulting to user).', e);
+              }
+            }
+
             const newUser: UserProfile = {
               uid: firebaseUser.uid,
-              email: firebaseUser.email || '',
-              role: 'user',
+              email,
+              role: invitedAsManager ? 'manager' : 'user',
               name: firebaseUser.displayName,
               photoURL: firebaseUser.photoURL,
               subscriptionStatus: 'inactive',
