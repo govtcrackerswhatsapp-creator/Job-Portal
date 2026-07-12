@@ -81,9 +81,10 @@ export interface SocialLink {
 
 export interface AppSettings {
   allowManagerAnalytics?: boolean;
+  maintenanceMode?: boolean;
+  maintenanceMessage?: string;
 }
 
-// ---- Landing page (Design CMS) ----
 export interface LandingFeature {
   icon: string;
   title: string;
@@ -98,6 +99,8 @@ export interface LandingSettings {
   heroHeadlineAccent: string;
   heroSubtext: string;
   heroCtaText: string;
+  heroImages: string[];
+  heroImageInterval: number;
   featuresTitle: string;
   features: LandingFeature[];
   footerContactEmail: string;

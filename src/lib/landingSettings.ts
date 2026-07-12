@@ -2,7 +2,6 @@ import { db } from './firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { LandingSettings } from '../types';
 
-// Defaults match the current landing page, so nothing changes until the admin edits.
 export const DEFAULT_LANDING: LandingSettings = {
   brandNameStart: 'Tec',
   brandNameEnd: 'Kosh',
@@ -11,6 +10,8 @@ export const DEFAULT_LANDING: LandingSettings = {
   heroHeadlineAccent: 'government & private jobs',
   heroSubtext: 'Get exam details, study material, eligibility, and application dates for every opportunity — all in one place, updated daily.',
   heroCtaText: 'Get Started Free',
+  heroImages: [],
+  heroImageInterval: 5,
   featuresTitle: 'Everything you need to land your dream job',
   features: [
     { icon: 'bell', title: 'Daily Job Updates', description: 'Fresh government, corporate, and internship notifications added every day.' },
@@ -25,18 +26,30 @@ export const DEFAULT_LANDING: LandingSettings = {
   termsUrl: '',
 };
 
+// Lightweight in-memory cache: avoids re-reading Firestore on every landing visit.
+let cache: { data: LandingSettings; at: number } | null = null;
+const CACHE_MS = 2 * 60 * 1000; // 2 minutes
+
+/** Clear the cache — call after an admin saves, so changes show immediately. */
+export function clearLandingCache() {
+  cache = null;
+}
+
 /**
- * Load landing settings from Firestore, merged over defaults so any missing
- * field safely falls back. Never throws — returns defaults on any error.
+ * Load landing settings, merged over defaults. Uses a 2-min in-memory cache to
+ * cut reads. Never throws — returns defaults on error.
  */
-export async function loadLandingSettings(): Promise<LandingSettings> {
+export async function loadLandingSettings(force = false): Promise<LandingSettings> {
+  if (!force && cache && Date.now() - cache.at < CACHE_MS) {
+    return cache.data;
+  }
   try {
     const snap = await getDoc(doc(db, 'settings', 'landing'));
-    if (snap.exists()) {
-      return { ...DEFAULT_LANDING, ...(snap.data() as Partial<LandingSettings>) };
-    }
+    const data = snap.exists() ? { ...DEFAULT_LANDING, ...(snap.data() as Partial<LandingSettings>) } : DEFAULT_LANDING;
+    cache = { data, at: Date.now() };
+    return data;
   } catch (e) {
     console.error('Failed to load landing settings, using defaults.', e);
+    return cache?.data ?? DEFAULT_LANDING;
   }
-  return DEFAULT_LANDING;
 }

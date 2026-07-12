@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
+import MaintenanceGate from './components/MaintenanceGate';
 import LandingPage from './pages/LandingPage';
 import Dashboard from './pages/Dashboard';
 import ManageJobs from './pages/ManageJobs';
@@ -37,10 +38,13 @@ export default function App() {
     <AuthProvider>
       <Router>
         <Routes>
+          {/* Public landing — always accessible, even during maintenance */}
           <Route path="/" element={<PublicHome />} />
-          <Route path="/subscribe" element={<ProtectedRoute><Subscription /></ProtectedRoute>} />
 
-          <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+          {/* Everything authenticated is behind the maintenance gate */}
+          <Route path="/subscribe" element={<ProtectedRoute><MaintenanceGate><Subscription /></MaintenanceGate></ProtectedRoute>} />
+
+          <Route element={<ProtectedRoute><MaintenanceGate><Layout /></MaintenanceGate></ProtectedRoute>}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/job/:id" element={<JobDetails />} />
             <Route path="/cart" element={<Cart />} />

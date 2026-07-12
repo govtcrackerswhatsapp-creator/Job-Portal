@@ -2,9 +2,11 @@ import { useState } from 'react';
 import PaymentSettings from '../components/PaymentSettings';
 import SubscribersManagement from '../components/SubscribersManagement';
 import ManagerManagement from '../components/ManagerManagement';
-import { CreditCard, Users, UserCog } from 'lucide-react';
+import DesignSettings from '../components/DesignSettings';
+import GeneralSettings from '../components/GeneralSettings';
+import { CreditCard, Users, UserCog, Palette, Settings } from 'lucide-react';
 
-type Tab = 'subscribers' | 'managers' | 'plans';
+type Tab = 'subscribers' | 'managers' | 'plans' | 'design' | 'general';
 
 export default function Admin() {
   const [tab, setTab] = useState<Tab>('subscribers');
@@ -13,6 +15,8 @@ export default function Admin() {
     { id: 'subscribers', label: 'Subscribers', icon: Users },
     { id: 'managers', label: 'Managers', icon: UserCog },
     { id: 'plans', label: 'Plans', icon: CreditCard },
+    { id: 'design', label: 'Design', icon: Palette },
+    { id: 'general', label: 'General', icon: Settings },
   ];
 
   return (
@@ -40,6 +44,8 @@ export default function Admin() {
         {tab === 'subscribers' && <SubscribersManagement />}
         {tab === 'managers' && <ManagerManagement />}
         {tab === 'plans' && <PaymentSettings />}
+        {tab === 'design' && <DesignSettings />}
+        {tab === 'general' && <GeneralSettings />}
       </div>
     </div>
   );
