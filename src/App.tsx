@@ -5,6 +5,8 @@ import Layout from './components/Layout';
 import LandingPage from './pages/LandingPage';
 import Dashboard from './pages/Dashboard';
 import ManageJobs from './pages/ManageJobs';
+import JobDetails from './pages/JobDetails';
+import Cart from './pages/Cart';
 import { Loader2 } from 'lucide-react';
 
 function PublicHome() {
@@ -19,7 +21,6 @@ function PublicHome() {
   }
 
   if (user) {
-    // Staff land on Manage Jobs for now (Analytics comes later); regular users on Dashboard.
     const dest = user.role === 'user' ? '/dashboard' : '/manage-jobs';
     return <Navigate to={dest} replace />;
   }
@@ -36,6 +37,8 @@ export default function App() {
 
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/job/:id" element={<JobDetails />} />
+            <Route path="/cart" element={<Cart />} />
             <Route path="/manage-jobs" element={<ProtectedRoute allowedRoles={['superadmin', 'manager']}><ManageJobs /></ProtectedRoute>} />
           </Route>
 
