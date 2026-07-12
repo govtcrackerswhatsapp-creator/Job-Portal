@@ -64,7 +64,6 @@ export default function DesignSettings() {
     [arr[i], arr[j]] = [arr[j], arr[i]]; set('heroImages', arr);
   };
 
-  // Footer links
   const links = form.footerLinks || [];
   const updateLink = (i: number, key: keyof FooterLink, value: string) => {
     const arr = [...links]; arr[i] = { ...arr[i], [key]: value }; set('footerLinks', arr);
@@ -85,6 +84,10 @@ export default function DesignSettings() {
         features: form.features.filter((f) => f.title.trim() || f.description.trim()),
         heroImages: (form.heroImages || []).filter((u) => u.trim()),
         heroImageInterval: Math.max(1, Number(form.heroImageInterval) || 5),
+        heroOverlayOpacity: Math.min(100, Math.max(0, Number(form.heroOverlayOpacity) || 0)),
+        heroBlur: Math.max(0, Number(form.heroBlur) || 0),
+        heroMinHeight: Math.max(300, Number(form.heroMinHeight) || 520),
+        heroPaddingY: Math.max(0, Number(form.heroPaddingY) || 64),
         footerLinks: (form.footerLinks || []).filter((l) => l.label.trim() && l.url.trim()),
       };
       await setDoc(doc(db, 'settings', 'landing'), cleaned, { merge: true });
@@ -134,11 +137,37 @@ export default function DesignSettings() {
         </Section>
 
         <Section title="Hero Background Images (carousel)">
-          <p className="text-xs text-zinc-500">Paste image URLs (host them free on ImgBB, Postimages, etc.). Multiple images rotate as a carousel. Leave empty for a clean gradient.</p>
+          <p className="text-xs text-zinc-500">Paste image URLs (host them free on ImgBB, Postimages, etc.). Filenames must have no spaces or special characters. Multiple images rotate as a carousel. Leave empty for a clean gradient.</p>
           <Row label="Seconds between image changes">
             <input type="number" min="1" className={inputCls + ' w-40'} value={form.heroImageInterval} onChange={(e) => set('heroImageInterval', Number(e.target.value))} />
           </Row>
-          <div className="space-y-2">
+
+          {/* Hero display controls */}
+          <div className="grid sm:grid-cols-2 gap-3 pt-1">
+            <Row label={`Image fade / overlay (${form.heroOverlayOpacity ?? 40}%) — lower = clearer image`}>
+              <input type="range" min="0" max="100" className="w-full accent-[#8b2df2]" value={form.heroOverlayOpacity ?? 40} onChange={(e) => set('heroOverlayOpacity', Number(e.target.value))} />
+            </Row>
+            <Row label={`Image blur (${form.heroBlur ?? 0}px) — 0 = crisp`}>
+              <input type="range" min="0" max="12" className="w-full accent-[#8b2df2]" value={form.heroBlur ?? 0} onChange={(e) => set('heroBlur', Number(e.target.value))} />
+            </Row>
+            <Row label="Image focus (which part stays visible)">
+              <select className={inputCls} value={form.heroImagePosition || 'center'} onChange={(e) => set('heroImagePosition', e.target.value)}>
+                <option value="center">Center</option>
+                <option value="top">Top</option>
+                <option value="bottom">Bottom</option>
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+              </select>
+            </Row>
+            <Row label={`Hero height (${form.heroMinHeight ?? 520}px)`}>
+              <input type="range" min="360" max="800" step="20" className="w-full accent-[#8b2df2]" value={form.heroMinHeight ?? 520} onChange={(e) => set('heroMinHeight', Number(e.target.value))} />
+            </Row>
+            <Row label={`Vertical padding (${form.heroPaddingY ?? 64}px)`}>
+              <input type="range" min="16" max="160" step="4" className="w-full accent-[#8b2df2]" value={form.heroPaddingY ?? 64} onChange={(e) => set('heroPaddingY', Number(e.target.value))} />
+            </Row>
+          </div>
+
+          <div className="space-y-2 pt-2">
             {images.map((url, i) => (
               <div key={i} className="flex items-center gap-2">
                 <ImageIcon className="w-4 h-4 text-zinc-400 shrink-0" />
@@ -178,7 +207,6 @@ export default function DesignSettings() {
           </div>
           <Row label="Copyright text"><input className={inputCls} value={form.footerCopyright} onChange={(e) => set('footerCopyright', e.target.value)} /></Row>
 
-          {/* Footer links — editable label + hosted URL */}
           <div className="pt-2">
             <label className="block text-sm font-medium text-zinc-700 mb-1">Footer Links</label>
             <p className="text-xs text-zinc-500 mb-2">Add links like "Privacy Policy", "Refund Policy", "About Us". Set the visible text and the URL where the document is hosted (Google Drive, hosted PDF, etc.). Opens in a new tab.</p>

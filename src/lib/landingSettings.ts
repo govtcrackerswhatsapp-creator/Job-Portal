@@ -12,6 +12,11 @@ export const DEFAULT_LANDING: LandingSettings = {
   heroCtaText: 'Get Started Free',
   heroImages: [],
   heroImageInterval: 5,
+  heroOverlayOpacity: 40,   // lighter than before, so images show clearly
+  heroBlur: 0,              // crisp by default
+  heroImagePosition: 'center',
+  heroMinHeight: 520,
+  heroPaddingY: 64,
   featuresTitle: 'Everything you need to land your dream job',
   features: [
     { icon: 'bell', title: 'Daily Job Updates', description: 'Fresh government, corporate, and internship notifications added every day.' },
@@ -30,10 +35,6 @@ const CACHE_MS = 2 * 60 * 1000;
 
 export function clearLandingCache() { cache = null; }
 
-/**
- * Load landing settings merged over defaults. Also migrates any old
- * privacyUrl/termsUrl into the new footerLinks list if present.
- */
 export async function loadLandingSettings(force = false): Promise<LandingSettings> {
   if (!force && cache && Date.now() - cache.at < CACHE_MS) return cache.data;
   try {
@@ -42,7 +43,6 @@ export async function loadLandingSettings(force = false): Promise<LandingSetting
       ? { ...DEFAULT_LANDING, ...(snap.data() as Partial<LandingSettings>) }
       : DEFAULT_LANDING;
 
-    // Migrate legacy fixed links into footerLinks (only if footerLinks is empty).
     if ((!data.footerLinks || data.footerLinks.length === 0)) {
       const migrated: FooterLink[] = [];
       if (data.privacyUrl) migrated.push({ label: 'Privacy Policy', url: data.privacyUrl });

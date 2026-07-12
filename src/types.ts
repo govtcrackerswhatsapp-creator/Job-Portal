@@ -102,7 +102,6 @@ export interface LandingFeature {
   description: string;
 }
 
-// A custom footer link: editable label + hosted URL.
 export interface FooterLink {
   label: string;
   url: string;
@@ -118,13 +117,18 @@ export interface LandingSettings {
   heroCtaText: string;
   heroImages: string[];
   heroImageInterval: number;
+  // Hero display controls
+  heroOverlayOpacity: number;   // 0-100 (white overlay strength; lower = image more visible)
+  heroBlur: number;             // px of backdrop blur (0 = crisp)
+  heroImagePosition: string;    // 'center' | 'top' | 'bottom'
+  heroMinHeight: number;        // min hero height in px
+  heroPaddingY: number;         // top/bottom padding in px
   featuresTitle: string;
   features: LandingFeature[];
   footerContactEmail: string;
   footerContactPhone: string;
   footerCopyright: string;
   footerLinks: FooterLink[];
-  // Kept for backward-compatibility (older saved docs); no longer edited directly.
   privacyUrl?: string;
   termsUrl?: string;
 }
