@@ -5,7 +5,7 @@ import { collection, getDocs, query, orderBy, doc, getDoc, setDoc } from 'fireba
 import { useAuth } from '../contexts/AuthContext';
 import { Job, JobCategory } from '../types';
 import { categoryBadgeClass, categoryLabel, formatDate } from '../lib/format';
-import { Search, Bookmark, BookmarkCheck, Loader2, Calendar, ArrowRight, Briefcase } from 'lucide-react';
+import { Search, Bookmark, BookmarkCheck, Loader2, Calendar, ArrowRight, Briefcase, Users } from 'lucide-react';
 
 const CATEGORIES: (JobCategory | 'all')[] = ['all', 'government', 'corporate', 'internship'];
 
@@ -26,14 +26,12 @@ export default function Dashboard() {
   const load = async () => {
     try {
       setLoading(true);
-      // Jobs
       const q = query(collection(db, 'jobs'), orderBy('createdAt', 'desc'));
       const snap = await getDocs(q);
       const list: Job[] = [];
       snap.forEach((d) => list.push({ id: d.id, ...(d.data() as Job) }));
       setJobs(list);
 
-      // Saved jobs (this user's cart)
       if (user) {
         const cartSnap = await getDoc(doc(db, 'carts', user.uid));
         if (cartSnap.exists()) {
@@ -129,9 +127,6 @@ export default function Dashboard() {
                     <Link to={`/job/${job.id}`} className="block">
                       <h3 className="font-semibold text-zinc-900 text-lg leading-snug group-hover:text-[#8b2df2] transition">{job.title}</h3>
                     </Link>
-                    {job.educationalQualification && (
-                      <p className="text-sm text-zinc-500 mt-1 line-clamp-1">{job.educationalQualification}</p>
-                    )}
                   </div>
                   <button
                     onClick={() => toggleSave(job.id || '')}
@@ -143,7 +138,9 @@ export default function Dashboard() {
                   </button>
                 </div>
                 <div className="mt-3 pt-3 border-t border-zinc-50 flex items-center justify-between">
-                  <span className="text-xs text-zinc-400">Age limit: {job.ageLimit || '—'}</span>
+                  <span className="inline-flex items-center gap-1 text-xs text-zinc-400">
+                    <Users className="w-3 h-3" /> Age limit: {job.ageLimit || '—'}
+                  </span>
                   <Link to={`/job/${job.id}`} className="inline-flex items-center gap-1 text-sm font-medium text-[#8b2df2] hover:gap-2 transition-all">
                     View details <ArrowRight className="w-4 h-4" />
                   </Link>

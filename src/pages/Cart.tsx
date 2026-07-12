@@ -5,7 +5,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { Job } from '../types';
 import { categoryBadgeClass, categoryLabel, formatDate } from '../lib/format';
-import { Bookmark, Trash2, Loader2, ArrowRight, Calendar } from 'lucide-react';
+import { Bookmark, Trash2, Loader2, ArrowRight, Calendar, Users } from 'lucide-react';
 
 export default function Cart() {
   const { user } = useAuth();
@@ -30,7 +30,6 @@ export default function Cart() {
         setJobs([]);
         return;
       }
-      // Fetch each saved job. (Batched by Firestore under the hood; fine for small saved lists.)
       const fetched: Job[] = [];
       for (const id of ids) {
         const snap = await getDoc(doc(db, 'jobs', id));
@@ -79,6 +78,9 @@ export default function Cart() {
                       <Calendar className="w-3 h-3" /> Last date: {formatDate(job.applicationEndDate)}
                     </span>
                   )}
+                  <span className="inline-flex items-center gap-1 text-xs text-zinc-400">
+                    <Users className="w-3 h-3" /> Age: {job.ageLimit || '—'}
+                  </span>
                 </div>
                 <Link to={`/job/${job.id}`}>
                   <h3 className="font-semibold text-zinc-900 hover:text-[#8b2df2] transition">{job.title}</h3>
