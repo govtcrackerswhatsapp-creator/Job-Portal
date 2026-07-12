@@ -4,6 +4,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import LandingPage from './pages/LandingPage';
 import Dashboard from './pages/Dashboard';
+import ManageJobs from './pages/ManageJobs';
 import { Loader2 } from 'lucide-react';
 
 function PublicHome() {
@@ -18,7 +19,9 @@ function PublicHome() {
   }
 
   if (user) {
-    return <Navigate to={user.role === 'superadmin' ? '/analytics' : '/dashboard'} replace />;
+    // Staff land on Manage Jobs for now (Analytics comes later); regular users on Dashboard.
+    const dest = user.role === 'user' ? '/dashboard' : '/manage-jobs';
+    return <Navigate to={dest} replace />;
   }
 
   return <LandingPage />;
@@ -31,10 +34,9 @@ export default function App() {
         <Routes>
           <Route path="/" element={<PublicHome />} />
 
-          {/* Authenticated app shell (sidebar layout) */}
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route path="/dashboard" element={<Dashboard />} />
-            {/* More pages get added here as we build them */}
+            <Route path="/manage-jobs" element={<ProtectedRoute allowedRoles={['superadmin', 'manager']}><ManageJobs /></ProtectedRoute>} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
