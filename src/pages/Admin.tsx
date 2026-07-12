@@ -6,9 +6,10 @@ import DesignSettings from '../components/DesignSettings';
 import GeneralSettings from '../components/GeneralSettings';
 import BackupRestore from '../components/BackupRestore';
 import DataRetention from '../components/DataRetention';
-import { CreditCard, Users, UserCog, Palette, Settings, DatabaseBackup, ShieldAlert } from 'lucide-react';
+import SocialSettings from '../components/SocialSettings';
+import { CreditCard, Users, UserCog, Palette, Settings, DatabaseBackup, ShieldAlert, Share2 } from 'lucide-react';
 
-type Tab = 'subscribers' | 'managers' | 'plans' | 'design' | 'general' | 'backup' | 'retention';
+type Tab = 'subscribers' | 'managers' | 'plans' | 'design' | 'community' | 'general' | 'backup' | 'retention';
 
 export default function Admin() {
   const [tab, setTab] = useState<Tab>('subscribers');
@@ -17,6 +18,7 @@ export default function Admin() {
     { id: 'subscribers', label: 'Subscribers', icon: Users },
     { id: 'managers', label: 'Managers', icon: UserCog },
     { id: 'plans', label: 'Plans', icon: CreditCard },
+    { id: 'community', label: 'Community', icon: Share2 },
     { id: 'design', label: 'Design', icon: Palette },
     { id: 'general', label: 'General', icon: Settings },
     { id: 'backup', label: 'Backup', icon: DatabaseBackup },
@@ -48,6 +50,7 @@ export default function Admin() {
         {tab === 'subscribers' && <SubscribersManagement />}
         {tab === 'managers' && <ManagerManagement />}
         {tab === 'plans' && <PaymentSettings />}
+        {tab === 'community' && <SocialSettings />}
         {tab === 'design' && <DesignSettings />}
         {tab === 'general' && <GeneralSettings />}
         {tab === 'backup' && <BackupRestore />}
