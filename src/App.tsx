@@ -8,6 +8,7 @@ import ManageJobs from './pages/ManageJobs';
 import JobDetails from './pages/JobDetails';
 import Cart from './pages/Cart';
 import Profile from './pages/Profile';
+import Admin from './pages/Admin';
 import { Loader2 } from 'lucide-react';
 
 function PublicHome() {
@@ -29,7 +30,6 @@ function PublicHome() {
   return <LandingPage />;
 }
 
-// Temporary placeholder — replaced by the real pages in upcoming batches.
 function ComingSoon({ title }: { title: string }) {
   return (
     <div className="p-6 md:p-8 max-w-3xl mx-auto">
@@ -55,7 +55,7 @@ export default function App() {
             <Route path="/profile" element={<Profile />} />
             <Route path="/manage-jobs" element={<ProtectedRoute allowedRoles={['superadmin', 'manager']}><ManageJobs /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute allowedRoles={['superadmin', 'manager']}><ComingSoon title="Analytics" /></ProtectedRoute>} />
-            <Route path="/admin" element={<ProtectedRoute allowedRoles={['superadmin']}><ComingSoon title="Admin Panel" /></ProtectedRoute>} />
+            <Route path="/admin" element={<ProtectedRoute allowedRoles={['superadmin']}><Admin /></ProtectedRoute>} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
