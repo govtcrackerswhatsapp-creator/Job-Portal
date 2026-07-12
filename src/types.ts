@@ -82,3 +82,27 @@ export interface SocialLink {
 export interface AppSettings {
   allowManagerAnalytics?: boolean;
 }
+
+// ---- Landing page (Design CMS) ----
+export interface LandingFeature {
+  icon: string;
+  title: string;
+  description: string;
+}
+
+export interface LandingSettings {
+  brandNameStart: string;
+  brandNameEnd: string;
+  heroBadge: string;
+  heroHeadline: string;
+  heroHeadlineAccent: string;
+  heroSubtext: string;
+  heroCtaText: string;
+  featuresTitle: string;
+  features: LandingFeature[];
+  footerContactEmail: string;
+  footerContactPhone: string;
+  footerCopyright: string;
+  privacyUrl: string;
+  termsUrl: string;
+}
