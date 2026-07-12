@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { db } from '../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { hasPortalAccess } from '../lib/access';
+import { getJob } from '../lib/jobsData';
 import { Job } from '../types';
 import { categoryBadgeClass, categoryLabel, formatDate } from '../lib/format';
 import { ArrowLeft, Calendar, GraduationCap, Users, Lock, Loader2, FileText, BookOpen, Sparkles, Clock } from 'lucide-react';
@@ -41,12 +40,9 @@ export default function JobDetails() {
     if (!id) return;
     try {
       setLoading(true);
-      const snap = await getDoc(doc(db, 'jobs', id));
-      if (snap.exists()) {
-        setJob({ id: snap.id, ...(snap.data() as Job) });
-      } else {
-        setNotFound(true);
-      }
+      const j = await getJob(id); // cached (reuses dashboard's jobs if loaded)
+      if (j) setJob(j);
+      else setNotFound(true);
     } catch (e) {
       console.error('Error loading job:', e);
       setNotFound(true);
@@ -74,13 +70,11 @@ export default function JobDetails() {
         <ArrowLeft className="w-4 h-4" /> Back
       </button>
 
-      {/* Header — free: title + category */}
       <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${categoryBadgeClass(job.category)}`}>{categoryLabel(job.category)}</span>
         <h1 className="font-heading text-2xl md:text-3xl font-bold text-zinc-900 mt-3">{job.title}</h1>
       </div>
 
-      {/* Free preview — age + LAST DATE (urgency) */}
       <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
         <div className="grid sm:grid-cols-2 gap-4">
           <InfoRow icon={Users} label="Age Limit" value={job.ageLimit} />
@@ -88,7 +82,6 @@ export default function JobDetails() {
         </div>
       </div>
 
-      {/* Urgency banner for non-subscribers */}
       {!canAccess && job.applicationEndDate && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 flex items-center gap-3">
           <Clock className="w-5 h-5 text-amber-600 shrink-0" />
@@ -98,7 +91,6 @@ export default function JobDetails() {
         </div>
       )}
 
-      {/* Everything else is gated */}
       {canAccess ? (
         <div className="space-y-4">
           <div className="bg-white rounded-2xl shadow-soft p-6">

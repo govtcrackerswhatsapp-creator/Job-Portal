@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
+import { getJob } from '../lib/jobsData';
 import { Job } from '../types';
 import { categoryBadgeClass, categoryLabel, formatDate } from '../lib/format';
 import { Bookmark, Trash2, Loader2, ArrowRight, Calendar, Users } from 'lucide-react';
@@ -32,8 +33,8 @@ export default function Cart() {
       }
       const fetched: Job[] = [];
       for (const id of ids) {
-        const snap = await getDoc(doc(db, 'jobs', id));
-        if (snap.exists()) fetched.push({ id: snap.id, ...(snap.data() as Job) });
+        const j = await getJob(id); // cached
+        if (j) fetched.push(j);
       }
       setJobs(fetched);
     } catch (e) {

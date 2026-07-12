@@ -1,7 +1,8 @@
 import { useEffect, useState, ReactNode, useMemo } from 'react';
 import { db } from '../lib/firebase';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
+import { getJobs, clearJobsCache } from '../lib/jobsData';
 import { Job, JobCategory, JobSection } from '../types';
 import { categoryBadgeClass, categoryLabel, formatDate } from '../lib/format';
 import { Plus, Pencil, Trash2, X, Loader2, Save, Briefcase, AlertTriangle } from 'lucide-react';
@@ -71,10 +72,7 @@ export default function ManageJobs() {
   const fetchJobs = async () => {
     try {
       setLoading(true);
-      const q = query(collection(db, 'jobs'), orderBy('createdAt', 'desc'));
-      const snap = await getDocs(q);
-      const list: Job[] = [];
-      snap.forEach((d) => list.push({ id: d.id, ...(d.data() as Job) }));
+      const list = await getJobs(true); // force-fresh for the management view (also refreshes cache)
       setJobs(list);
     } catch (e) {
       console.error('Error fetching jobs:', e);
@@ -123,6 +121,7 @@ export default function ManageJobs() {
       } else {
         await addDoc(collection(db, 'jobs'), { ...payload, createdAt: Date.now(), createdBy: user.uid });
       }
+      clearJobsCache();
       setShowForm(false);
       await fetchJobs();
     } catch (e) {
@@ -137,6 +136,7 @@ export default function ManageJobs() {
     if (!id || !confirm('Delete this job? This cannot be undone.')) return;
     try {
       await deleteDoc(doc(db, 'jobs', id));
+      clearJobsCache();
       await fetchJobs();
     } catch (e) {
       console.error('Error deleting job:', e);
@@ -152,6 +152,7 @@ export default function ManageJobs() {
       for (const job of expiredJobs) {
         if (job.id) await deleteDoc(doc(db, 'jobs', job.id));
       }
+      clearJobsCache();
       await fetchJobs();
     } catch (e) {
       console.error('Error bulk deleting:', e);
@@ -253,7 +254,6 @@ export default function ManageJobs() {
         </div>
       ) : (
         <>
-          {/* Active / Expired toggle */}
           <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
             <div className="inline-flex bg-white rounded-xl p-1 shadow-soft">
               <button onClick={() => setView('active')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'active' ? 'bg-[#8b2df2] text-white' : 'text-zinc-600 hover:bg-zinc-100'}`}>

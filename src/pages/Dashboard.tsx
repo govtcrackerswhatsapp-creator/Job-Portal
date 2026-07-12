@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { db } from '../lib/firebase';
-import { collection, getDocs, query, orderBy, doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
+import { getJobs } from '../lib/jobsData';
 import { Job, JobCategory } from '../types';
 import { categoryBadgeClass, categoryLabel, formatDate } from '../lib/format';
 import { Search, Bookmark, BookmarkCheck, Loader2, Calendar, ArrowRight, Briefcase, Users } from 'lucide-react';
@@ -26,10 +27,7 @@ export default function Dashboard() {
   const load = async () => {
     try {
       setLoading(true);
-      const q = query(collection(db, 'jobs'), orderBy('createdAt', 'desc'));
-      const snap = await getDocs(q);
-      const list: Job[] = [];
-      snap.forEach((d) => list.push({ id: d.id, ...(d.data() as Job) }));
+      const list = await getJobs(); // cached
       setJobs(list);
 
       if (user) {
@@ -75,7 +73,6 @@ export default function Dashboard() {
         <p className="text-zinc-500 mt-1">Browse the newest notifications. Tap a job for full details.</p>
       </div>
 
-      {/* Search + filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
