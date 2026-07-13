@@ -119,6 +119,10 @@ export default function DesignSettings() {
         heroBlur: Math.max(0, Number(form.heroBlur) || 0),
         heroMinHeight: Math.max(300, Number(form.heroMinHeight) || 520),
         heroPaddingY: Math.max(0, Number(form.heroPaddingY) || 64),
+        heroOverlayOpacityMobile: Math.min(100, Math.max(0, Number(form.heroOverlayOpacityMobile) || 0)),
+        heroBlurMobile: Math.max(0, Number(form.heroBlurMobile) || 0),
+        heroMinHeightMobile: Math.max(300, Number(form.heroMinHeightMobile) || 520),
+        heroPaddingYMobile: Math.max(0, Number(form.heroPaddingYMobile) || 64),
         logoSizeNav: Math.max(16, Math.min(72, Number(form.logoSizeNav) || 32)),
         logoSizeFooter: Math.max(16, Math.min(72, Number(form.logoSizeFooter) || 28)),
         reviews: (form.reviews || []).filter((r) => r.name.trim() && r.text.trim()).map((r) => ({ ...r, stars: Math.max(1, Math.min(5, Number(r.stars) || 5)) })),
@@ -200,6 +204,8 @@ export default function DesignSettings() {
         <Section title="Hero Background Images (carousel)">
           <p className="text-xs text-zinc-500">Paste image URLs (host them free on ImgBB, Postimages, etc.). Filenames must have no spaces or special characters. Multiple images rotate as a carousel. Leave empty for a clean gradient.</p>
           <Row label="Seconds between image changes"><input type="number" min="1" className={inputCls + ' w-40'} value={form.heroImageInterval} onChange={(e) => set('heroImageInterval', Number(e.target.value))} /></Row>
+
+          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400 pt-2">Desktop display settings</p>
           <div className="grid sm:grid-cols-2 gap-3 pt-1">
             <Row label={`Image fade / overlay (${form.heroOverlayOpacity ?? 40}%) — lower = clearer image`}><input type="range" min="0" max="100" className="w-full accent-[#8b2df2]" value={form.heroOverlayOpacity ?? 40} onChange={(e) => set('heroOverlayOpacity', Number(e.target.value))} /></Row>
             <Row label={`Image blur (${form.heroBlur ?? 0}px) — 0 = crisp`}><input type="range" min="0" max="12" className="w-full accent-[#8b2df2]" value={form.heroBlur ?? 0} onChange={(e) => set('heroBlur', Number(e.target.value))} /></Row>
@@ -222,7 +228,7 @@ export default function DesignSettings() {
 
           <div className="pt-4 mt-2 border-t border-zinc-100">
             <label className="block text-sm font-medium text-zinc-700 mb-1">Mobile Hero Images <span className="text-zinc-400 font-normal">optional</span></label>
-            <p className="text-xs text-zinc-500 mb-2">Separate images shown to phone users (screens under 768px). Use tall/portrait images so nothing gets cut off. Leave empty to use the images above on mobile too. Same rotation speed and settings apply.</p>
+            <p className="text-xs text-zinc-500 mb-2">Separate images shown to phone users (screens under 768px). Use tall/portrait images so nothing gets cut off. Leave empty to use the images above on mobile too.</p>
             <div className="space-y-2">
               {mobileImages.map((url, i) => (
                 <div key={i} className="flex items-center gap-2">
@@ -234,6 +240,16 @@ export default function DesignSettings() {
                 </div>
               ))}
               <button onClick={addMobileImage} className="inline-flex items-center gap-1 text-sm font-medium text-[#8b2df2] hover:underline"><Plus className="w-4 h-4" /> Add Mobile Image URL</button>
+            </div>
+
+            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400 pt-4">Mobile display settings</p>
+            <p className="text-xs text-zinc-500 mb-1">These apply on phones (screens under 768px), independent of the desktop settings above.</p>
+            <div className="grid sm:grid-cols-2 gap-3 pt-1">
+              <Row label={`Image fade / overlay (${form.heroOverlayOpacityMobile ?? 40}%) — lower = clearer image`}><input type="range" min="0" max="100" className="w-full accent-[#8b2df2]" value={form.heroOverlayOpacityMobile ?? 40} onChange={(e) => set('heroOverlayOpacityMobile', Number(e.target.value))} /></Row>
+              <Row label={`Image blur (${form.heroBlurMobile ?? 0}px) — 0 = crisp`}><input type="range" min="0" max="12" className="w-full accent-[#8b2df2]" value={form.heroBlurMobile ?? 0} onChange={(e) => set('heroBlurMobile', Number(e.target.value))} /></Row>
+              <Row label="Image focus (which part stays visible)"><select className={inputCls} value={form.heroImagePositionMobile || 'center'} onChange={(e) => set('heroImagePositionMobile', e.target.value)}><option value="center">Center</option><option value="top">Top</option><option value="bottom">Bottom</option><option value="left">Left</option><option value="right">Right</option></select></Row>
+              <Row label={`Hero height (${form.heroMinHeightMobile ?? 520}px)`}><input type="range" min="360" max="800" step="20" className="w-full accent-[#8b2df2]" value={form.heroMinHeightMobile ?? 520} onChange={(e) => set('heroMinHeightMobile', Number(e.target.value))} /></Row>
+              <Row label={`Vertical padding (${form.heroPaddingYMobile ?? 64}px)`}><input type="range" min="16" max="160" step="4" className="w-full accent-[#8b2df2]" value={form.heroPaddingYMobile ?? 64} onChange={(e) => set('heroPaddingYMobile', Number(e.target.value))} /></Row>
             </div>
           </div>
         </Section>

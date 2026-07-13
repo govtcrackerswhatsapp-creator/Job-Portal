@@ -28,6 +28,11 @@ export const DEFAULT_LANDING: LandingSettings = {
   heroImagePosition: 'center',
   heroMinHeight: 520,
   heroPaddingY: 64,
+  heroOverlayOpacityMobile: 40,
+  heroBlurMobile: 0,
+  heroImagePositionMobile: 'center',
+  heroMinHeightMobile: 520,
+  heroPaddingYMobile: 64,
   featuresTitle: 'Everything you need to land your dream job',
   features: [
     { icon: 'bell', title: 'Daily Job Updates', description: 'Fresh government, corporate, and internship notifications added every day.' },

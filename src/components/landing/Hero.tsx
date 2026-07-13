@@ -30,11 +30,13 @@ export default function Hero({ settings }: { settings: LandingSettings }) {
   }, [images.length, settings.heroImageInterval]);
 
   const hasImages = images.length > 0;
-  const overlay = Math.min(100, Math.max(0, settings.heroOverlayOpacity ?? 40)) / 100;
-  const blur = Math.max(0, settings.heroBlur ?? 0);
-  const position = settings.heroImagePosition || 'center';
-  const minHeight = settings.heroMinHeight ?? 520;
-  const padY = settings.heroPaddingY ?? 64;
+
+  // Pick display settings: mobile controls on phones, desktop controls on larger screens.
+  const overlay = Math.min(100, Math.max(0, (isMobile ? settings.heroOverlayOpacityMobile : settings.heroOverlayOpacity) ?? 40)) / 100;
+  const blur = Math.max(0, (isMobile ? settings.heroBlurMobile : settings.heroBlur) ?? 0);
+  const position = (isMobile ? settings.heroImagePositionMobile : settings.heroImagePosition) || 'center';
+  const minHeight = (isMobile ? settings.heroMinHeightMobile : settings.heroMinHeight) ?? 520;
+  const padY = (isMobile ? settings.heroPaddingYMobile : settings.heroPaddingY) ?? 64;
 
   return (
     <section className="relative overflow-hidden flex items-center" style={{ minHeight: `${minHeight}px` }}>

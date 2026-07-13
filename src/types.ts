@@ -148,6 +148,11 @@ export interface LandingSettings {
   heroImagePosition: string;
   heroMinHeight: number;
   heroPaddingY: number;
+  heroOverlayOpacityMobile: number;
+  heroBlurMobile: number;
+  heroImagePositionMobile: string;
+  heroMinHeightMobile: number;
+  heroPaddingYMobile: number;
   featuresTitle: string;
   features: LandingFeature[];
   communityTitle: string;
