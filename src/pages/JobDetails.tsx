@@ -5,7 +5,7 @@ import { hasPortalAccess } from '../lib/access';
 import { getJob } from '../lib/jobsData';
 import { Job } from '../types';
 import { categoryBadgeClass, categoryLabel, formatDate } from '../lib/format';
-import { ArrowLeft, Calendar, GraduationCap, Users, Lock, Loader2, FileText, BookOpen, Sparkles, Clock } from 'lucide-react';
+import { ArrowLeft, Calendar, GraduationCap, Users, Lock, Loader2, FileText, BookOpen, Sparkles, Clock, ExternalLink } from 'lucide-react';
 
 function InfoRow({ icon: Icon, label, value }: { icon: typeof Calendar; label: string; value: string }) {
   return (
@@ -63,6 +63,8 @@ export default function JobDetails() {
       </div>
     );
   }
+
+  const linkButtons = (job.linkButtons || []).filter((b) => b.text?.trim() && b.url?.trim());
 
   return (
     <div className="p-6 md:p-8 max-w-3xl mx-auto">
@@ -129,23 +131,52 @@ export default function JobDetails() {
               <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">{section.content}</p>
             </div>
           ))}
+
+          {linkButtons.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-soft p-6">
+              <h2 className="font-heading text-base font-semibold text-zinc-900 mb-4">Quick Links</h2>
+              <div className="flex flex-wrap gap-3">
+                {linkButtons.map((btn, i) => (
+                  <a key={i} href={btn.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold shadow-soft hover:opacity-90 transition" style={{ backgroundColor: btn.bgColor || '#8b2df2', color: btn.textColor || '#ffffff' }}>
+                    {btn.text} <ExternalLink className="w-4 h-4" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
-        <div className="bg-gradient-to-br from-[#8b2df2]/5 to-[#00b4d8]/5 border border-[#8b2df2]/20 rounded-2xl p-8 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-white shadow-soft flex items-center justify-center mx-auto mb-4">
-            <Lock className="w-6 h-6 text-[#8b2df2]" />
+        <>
+          <div className="bg-gradient-to-br from-[#8b2df2]/5 to-[#00b4d8]/5 border border-[#8b2df2]/20 rounded-2xl p-8 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-white shadow-soft flex items-center justify-center mx-auto mb-4">
+              <Lock className="w-6 h-6 text-[#8b2df2]" />
+            </div>
+            <h3 className="font-heading text-lg font-bold text-zinc-900">Full details are locked</h3>
+            <p className="text-sm text-zinc-500 mt-2 max-w-sm mx-auto">
+              Subscribe to see notification date, application window, eligibility, exam details, study material, and everything else — for this job and every other listing.
+            </p>
+            <Link
+              to="/subscribe"
+              className="inline-flex items-center gap-2 mt-5 bg-gradient-to-r from-[#8b2df2] to-[#00b4d8] text-white rounded-xl px-6 py-3 text-sm font-semibold shadow-soft hover:opacity-90 transition"
+            >
+              <Sparkles className="w-4 h-4" /> Subscribe to unlock
+            </Link>
           </div>
-          <h3 className="font-heading text-lg font-bold text-zinc-900">Full details are locked</h3>
-          <p className="text-sm text-zinc-500 mt-2 max-w-sm mx-auto">
-            Subscribe to see notification date, application window, eligibility, exam details, study material, and everything else — for this job and every other listing.
-          </p>
-          <Link
-            to="/subscribe"
-            className="inline-flex items-center gap-2 mt-5 bg-gradient-to-r from-[#8b2df2] to-[#00b4d8] text-white rounded-xl px-6 py-3 text-sm font-semibold shadow-soft hover:opacity-90 transition"
-          >
-            <Sparkles className="w-4 h-4" /> Subscribe to unlock
-          </Link>
-        </div>
+
+          {linkButtons.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-soft p-6 mt-4">
+              <h2 className="font-heading text-base font-semibold text-zinc-900 mb-1">Quick Links</h2>
+              <p className="text-xs text-zinc-400 mb-4">Subscribe to open these links.</p>
+              <div className="flex flex-wrap gap-3">
+                {linkButtons.map((btn, i) => (
+                  <a key={i} href="/subscribe" target="_blank" rel="noopener noreferrer" title="Subscribe to open this link" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold shadow-soft hover:opacity-90 transition" style={{ backgroundColor: btn.bgColor || '#8b2df2', color: btn.textColor || '#ffffff' }}>
+                    {btn.text} <Lock className="w-3.5 h-3.5" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

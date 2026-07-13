@@ -22,6 +22,13 @@ export interface JobSection {
   content: string;
 }
 
+export interface JobLinkButton {
+  text: string;
+  url: string;
+  bgColor: string;
+  textColor: string;
+}
+
 export interface Job {
   id?: string;
   title: string;
@@ -34,6 +41,7 @@ export interface Job {
   examDetails?: string;
   studyMaterial?: string;
   customSections?: JobSection[];
+  linkButtons?: JobLinkButton[];
   createdAt: number;
   createdBy: string;
 }
@@ -124,7 +132,6 @@ export interface LandingSettings {
   logoSizeFooter: number;
   navBgColor: string;
   navTextColor: string;
-  // Sign-in button (separate from nav text)
   signInButtonText: string;
   signInBtnBgColor: string;
   signInBtnTextColor: string;
@@ -134,6 +141,7 @@ export interface LandingSettings {
   heroSubtext: string;
   heroCtaText: string;
   heroImages: string[];
+  heroImagesMobile: string[];
   heroImageInterval: number;
   heroOverlayOpacity: number;
   heroBlur: number;

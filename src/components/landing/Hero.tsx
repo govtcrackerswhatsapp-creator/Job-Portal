@@ -3,8 +3,24 @@ import { Sparkles } from 'lucide-react';
 import { LandingSettings } from '../../types';
 
 export default function Hero({ settings }: { settings: LandingSettings }) {
-  const images = (settings.heroImages || []).filter((u) => u.trim());
+  const desktopImages = (settings.heroImages || []).filter((u) => u.trim());
+  const mobileImagesRaw = (settings.heroImagesMobile || []).filter((u) => u.trim());
+  const [isMobile, setIsMobile] = useState(false);
   const [current, setCurrent] = useState(0);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  // On mobile, use mobile images if provided, else fall back to the desktop images.
+  const images = isMobile && mobileImagesRaw.length > 0 ? mobileImagesRaw : desktopImages;
+
+  useEffect(() => {
+    setCurrent(0);
+  }, [isMobile, images.length]);
 
   useEffect(() => {
     if (images.length <= 1) return;

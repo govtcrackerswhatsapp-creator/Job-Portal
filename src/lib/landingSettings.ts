@@ -21,6 +21,7 @@ export const DEFAULT_LANDING: LandingSettings = {
   heroSubtext: 'Get exam details, study material, eligibility, and application dates for every opportunity — all in one place, updated daily.',
   heroCtaText: 'Get Started Free',
   heroImages: [],
+  heroImagesMobile: [],
   heroImageInterval: 5,
   heroOverlayOpacity: 40,
   heroBlur: 0,

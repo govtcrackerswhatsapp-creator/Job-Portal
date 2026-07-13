@@ -3,7 +3,7 @@ import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { LandingSettings, LandingFeature, FooterLink, Review } from '../types';
 import { DEFAULT_LANDING, clearLandingCache } from '../lib/landingSettings';
-import { Loader2, Save, Plus, Trash2, CheckCircle2, ExternalLink, Image as ImageIcon, ArrowUp, ArrowDown, Link as LinkIcon, Star } from 'lucide-react';
+import { Loader2, Save, Plus, Trash2, CheckCircle2, Image as ImageIcon, ArrowUp, ArrowDown, Link as LinkIcon, Star } from 'lucide-react';
 
 const inputCls = 'w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30 focus:border-[#8b2df2] bg-white';
 const ICON_OPTIONS = ['bell', 'file-text', 'book-open', 'clock', 'shield', 'star', 'zap', 'award', 'users', 'trending-up'];
@@ -76,6 +76,16 @@ export default function DesignSettings() {
     [arr[i], arr[j]] = [arr[j], arr[i]]; set('heroImages', arr);
   };
 
+  const mobileImages = form.heroImagesMobile || [];
+  const updateMobileImage = (i: number, value: string) => { const arr = [...mobileImages]; arr[i] = value; set('heroImagesMobile', arr); };
+  const addMobileImage = () => set('heroImagesMobile', [...mobileImages, '']);
+  const removeMobileImage = (i: number) => { const arr = [...mobileImages]; arr.splice(i, 1); set('heroImagesMobile', arr); };
+  const moveMobileImage = (i: number, dir: -1 | 1) => {
+    const arr = [...mobileImages]; const j = i + dir;
+    if (j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]]; set('heroImagesMobile', arr);
+  };
+
   const links = form.footerLinks || [];
   const updateLink = (i: number, key: keyof FooterLink, value: string) => { const arr = [...links]; arr[i] = { ...arr[i], [key]: value }; set('footerLinks', arr); };
   const addLink = () => set('footerLinks', [...links, { label: '', url: '' }]);
@@ -103,6 +113,7 @@ export default function DesignSettings() {
         ...form,
         features: form.features.filter((f) => f.title.trim() || f.description.trim()),
         heroImages: (form.heroImages || []).filter((u) => u.trim()),
+        heroImagesMobile: (form.heroImagesMobile || []).filter((u) => u.trim()),
         heroImageInterval: Math.max(1, Number(form.heroImageInterval) || 5),
         heroOverlayOpacity: Math.min(100, Math.max(0, Number(form.heroOverlayOpacity) || 0)),
         heroBlur: Math.max(0, Number(form.heroBlur) || 0),
@@ -133,12 +144,9 @@ export default function DesignSettings() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-        <div>
-          <h2 className="font-heading text-lg font-semibold text-zinc-900">Landing Page Design</h2>
-          <p className="text-sm text-zinc-500">Edit what logged-out visitors see. Changes go live after saving.</p>
-        </div>
-        <a href="/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium text-[#8b2df2] hover:underline"><ExternalLink className="w-4 h-4" /> Preview</a>
+      <div className="mb-4">
+        <h2 className="font-heading text-lg font-semibold text-zinc-900">Landing Page Design</h2>
+        <p className="text-sm text-zinc-500">Edit what logged-out visitors see. Changes go live after saving.</p>
       </div>
 
       <div className="space-y-4">
@@ -210,6 +218,23 @@ export default function DesignSettings() {
               </div>
             ))}
             <button onClick={addImage} className="inline-flex items-center gap-1 text-sm font-medium text-[#8b2df2] hover:underline"><Plus className="w-4 h-4" /> Add Image URL</button>
+          </div>
+
+          <div className="pt-4 mt-2 border-t border-zinc-100">
+            <label className="block text-sm font-medium text-zinc-700 mb-1">Mobile Hero Images <span className="text-zinc-400 font-normal">optional</span></label>
+            <p className="text-xs text-zinc-500 mb-2">Separate images shown to phone users (screens under 768px). Use tall/portrait images so nothing gets cut off. Leave empty to use the images above on mobile too. Same rotation speed and settings apply.</p>
+            <div className="space-y-2">
+              {mobileImages.map((url, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-zinc-400 shrink-0" />
+                  <input className={inputCls + ' flex-1'} value={url} onChange={(e) => updateMobileImage(i, e.target.value)} placeholder="https://i.ibb.co/... (portrait image)" />
+                  <button onClick={() => moveMobileImage(i, -1)} disabled={i === 0} className="p-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30"><ArrowUp className="w-4 h-4" /></button>
+                  <button onClick={() => moveMobileImage(i, 1)} disabled={i === mobileImages.length - 1} className="p-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30"><ArrowDown className="w-4 h-4" /></button>
+                  <button onClick={() => removeMobileImage(i)} className="p-1.5 text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              ))}
+              <button onClick={addMobileImage} className="inline-flex items-center gap-1 text-sm font-medium text-[#8b2df2] hover:underline"><Plus className="w-4 h-4" /> Add Mobile Image URL</button>
+            </div>
           </div>
         </Section>
 

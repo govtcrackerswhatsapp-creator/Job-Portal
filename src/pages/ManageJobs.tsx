@@ -3,9 +3,9 @@ import { db } from '../lib/firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { getJobs, clearJobsCache } from '../lib/jobsData';
-import { Job, JobCategory, JobSection } from '../types';
+import { Job, JobCategory, JobSection, JobLinkButton } from '../types';
 import { categoryBadgeClass, categoryLabel, formatDate } from '../lib/format';
-import { Plus, Pencil, Trash2, X, Loader2, Save, Briefcase, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Loader2, Save, Briefcase, AlertTriangle, ArrowUp, ArrowDown, Link as LinkIcon } from 'lucide-react';
 
 interface JobFormState {
   title: string;
@@ -18,12 +18,13 @@ interface JobFormState {
   examDetails: string;
   studyMaterial: string;
   customSections: JobSection[];
+  linkButtons: JobLinkButton[];
 }
 
 const EMPTY_JOB: JobFormState = {
   title: '', category: 'government', ageLimit: '',
   notificationDate: null, applicationStartDate: null, applicationEndDate: null,
-  educationalQualification: '', examDetails: '', studyMaterial: '', customSections: [],
+  educationalQualification: '', examDetails: '', studyMaterial: '', customSections: [], linkButtons: [],
 };
 
 const inputCls = 'w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30 focus:border-[#8b2df2] bg-white';
@@ -39,7 +40,6 @@ function inputToTimestamp(value: string): number | null {
   return isNaN(ms) ? null : ms;
 }
 
-// A job is "expired" if its end date has passed, OR it has no end date and was created 30+ days ago.
 const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
 function isExpired(job: Job): boolean {
   const now = Date.now();
@@ -72,7 +72,7 @@ export default function ManageJobs() {
   const fetchJobs = async () => {
     try {
       setLoading(true);
-      const list = await getJobs(true); // force-fresh for the management view (also refreshes cache)
+      const list = await getJobs(true);
       setJobs(list);
     } catch (e) {
       console.error('Error fetching jobs:', e);
@@ -92,6 +92,7 @@ export default function ManageJobs() {
       notificationDate: job.notificationDate ?? null, applicationStartDate: job.applicationStartDate ?? null, applicationEndDate: job.applicationEndDate ?? null,
       educationalQualification: job.educationalQualification, examDetails: job.examDetails || '', studyMaterial: job.studyMaterial || '',
       customSections: job.customSections ? [...job.customSections] : [],
+      linkButtons: job.linkButtons ? [...job.linkButtons] : [],
     });
     setEditingId(job.id || null);
     setShowForm(true);
@@ -109,13 +110,35 @@ export default function ManageJobs() {
     setForm({ ...form, customSections: sections });
   };
 
+  const addButton = () => setForm({ ...form, linkButtons: [...form.linkButtons, { text: '', url: '', bgColor: '#8b2df2', textColor: '#ffffff' }] });
+  const updateButton = (i: number, field: keyof JobLinkButton, value: string) => {
+    const btns = [...form.linkButtons];
+    btns[i] = { ...btns[i], [field]: value };
+    setForm({ ...form, linkButtons: btns });
+  };
+  const removeButton = (i: number) => {
+    const btns = [...form.linkButtons];
+    btns.splice(i, 1);
+    setForm({ ...form, linkButtons: btns });
+  };
+  const moveButton = (i: number, dir: -1 | 1) => {
+    const btns = [...form.linkButtons];
+    const j = i + dir;
+    if (j < 0 || j >= btns.length) return;
+    [btns[i], btns[j]] = [btns[j], btns[i]];
+    setForm({ ...form, linkButtons: btns });
+  };
+
   const handleSave = async () => {
     if (!user) return;
     if (!form.title.trim()) { alert('Please enter a job title.'); return; }
     try {
       setSaving(true);
       const cleanSections = form.customSections.filter((s) => s.title.trim() || s.content.trim());
-      const payload = { ...form, customSections: cleanSections };
+      const cleanButtons = form.linkButtons
+        .filter((b) => b.text.trim() && b.url.trim())
+        .map((b) => ({ text: b.text.trim(), url: b.url.trim(), bgColor: b.bgColor || '#8b2df2', textColor: b.textColor || '#ffffff' }));
+      const payload = { ...form, customSections: cleanSections, linkButtons: cleanButtons };
       if (editingId) {
         await updateDoc(doc(db, 'jobs', editingId), payload as any);
       } else {
@@ -243,6 +266,54 @@ export default function ManageJobs() {
                 )}
               </div>
             </div>
+
+            <div className="pt-2 border-t border-zinc-100">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Link Buttons</p>
+                <button onClick={addButton} className="inline-flex items-center gap-1 text-sm font-medium text-[#8b2df2] hover:underline"><Plus className="w-4 h-4" /> Add Button</button>
+              </div>
+              <p className="text-xs text-zinc-400 mb-3">Action buttons shown at the bottom for subscribers (e.g. "Apply Here", "Official Notification"). Non-subscribers see them but are sent to the subscribe page.</p>
+              <div className="space-y-3">
+                {form.linkButtons.map((btn, i) => (
+                  <div key={i} className="bg-zinc-50 rounded-xl p-3 border border-zinc-100 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input className={inputCls + ' flex-1'} value={btn.text} onChange={(e) => updateButton(i, 'text', e.target.value)} placeholder="Button text (e.g. Apply Here)" />
+                      <button onClick={() => moveButton(i, -1)} disabled={i === 0} className="p-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30"><ArrowUp className="w-4 h-4" /></button>
+                      <button onClick={() => moveButton(i, 1)} disabled={i === form.linkButtons.length - 1} className="p-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30"><ArrowDown className="w-4 h-4" /></button>
+                      <button onClick={() => removeButton(i)} className="p-1.5 text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <LinkIcon className="w-4 h-4 text-zinc-400 shrink-0" />
+                      <input className={inputCls + ' flex-1'} value={btn.url} onChange={(e) => updateButton(i, 'url', e.target.value)} placeholder="https://... (link to open)" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-zinc-500 mb-1">Button color</label>
+                        <div className="flex items-center gap-2">
+                          <input type="color" value={btn.bgColor} onChange={(e) => updateButton(i, 'bgColor', e.target.value)} className="w-9 h-9 rounded-lg border border-zinc-200 bg-white cursor-pointer p-0.5 shrink-0" />
+                          <input className={inputCls} value={btn.bgColor} onChange={(e) => updateButton(i, 'bgColor', e.target.value)} placeholder="#8b2df2" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-zinc-500 mb-1">Text color</label>
+                        <div className="flex items-center gap-2">
+                          <input type="color" value={btn.textColor} onChange={(e) => updateButton(i, 'textColor', e.target.value)} className="w-9 h-9 rounded-lg border border-zinc-200 bg-white cursor-pointer p-0.5 shrink-0" />
+                          <input className={inputCls} value={btn.textColor} onChange={(e) => updateButton(i, 'textColor', e.target.value)} placeholder="#ffffff" />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="pt-1">
+                      <span className="text-xs text-zinc-400">Preview: </span>
+                      <span className="inline-flex items-center px-4 py-1.5 rounded-lg text-sm font-semibold" style={{ backgroundColor: btn.bgColor, color: btn.textColor }}>{btn.text || 'Button'}</span>
+                    </div>
+                  </div>
+                ))}
+                {form.linkButtons.length === 0 && (
+                  <p className="text-sm text-zinc-400">No buttons yet. Add one to link users to application forms, notifications, etc.</p>
+                )}
+              </div>
+            </div>
+
             <div className="flex items-center gap-3 pt-4">
               <button onClick={handleSave} disabled={saving} className="inline-flex items-center gap-2 bg-gradient-to-r from-[#8b2df2] to-[#00b4d8] text-white rounded-xl px-5 py-2.5 text-sm font-semibold shadow-soft hover:opacity-90 transition disabled:opacity-50">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
