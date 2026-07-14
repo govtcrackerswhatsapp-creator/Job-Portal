@@ -258,13 +258,23 @@ export default function DesignSettings() {
           <Row label="Section heading"><input className={inputCls} value={form.featuresTitle} onChange={(e) => set('featuresTitle', e.target.value)} /></Row>
           <div className="space-y-3 pt-2">
             {form.features.map((f, i) => (
-              <div key={i} className="bg-zinc-50 rounded-lg p-3 border border-zinc-100">
-                <div className="flex items-center gap-2 mb-2">
-                  <select className={inputCls + ' w-32'} value={f.icon} onChange={(e) => updateFeature(i, 'icon', e.target.value)}>{ICON_OPTIONS.map((ic) => <option key={ic} value={ic}>{ic}</option>)}</select>
-                  <input className={inputCls + ' flex-1'} value={f.title} onChange={(e) => updateFeature(i, 'title', e.target.value)} placeholder="Feature title" />
-                  <button onClick={() => removeFeature(i)} className="p-2 text-red-400 hover:text-red-600 shrink-0"><Trash2 className="w-4 h-4" /></button>
+              <div key={i} className="bg-zinc-50 rounded-lg p-3 border border-zinc-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Feature {i + 1}</span>
+                  <button onClick={() => removeFeature(i)} className="p-1.5 text-red-400 hover:text-red-600 shrink-0"><Trash2 className="w-4 h-4" /></button>
                 </div>
-                <textarea className={inputCls} rows={2} value={f.description} onChange={(e) => updateFeature(i, 'description', e.target.value)} placeholder="Feature description" />
+                <div>
+                  <label className="block text-xs font-medium text-zinc-600 mb-1">Icon</label>
+                  <select className={inputCls} value={f.icon} onChange={(e) => updateFeature(i, 'icon', e.target.value)}>{ICON_OPTIONS.map((ic) => <option key={ic} value={ic}>{ic}</option>)}</select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-600 mb-1">Heading</label>
+                  <input className={inputCls} value={f.title} onChange={(e) => updateFeature(i, 'title', e.target.value)} placeholder="e.g. Daily Job Updates" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-600 mb-1">Description</label>
+                  <textarea className={inputCls} rows={2} value={f.description} onChange={(e) => updateFeature(i, 'description', e.target.value)} placeholder="Short text shown under the heading" />
+                </div>
               </div>
             ))}
             <button onClick={addFeature} className="inline-flex items-center gap-1 text-sm font-medium text-[#8b2df2] hover:underline"><Plus className="w-4 h-4" /> Add Feature</button>
