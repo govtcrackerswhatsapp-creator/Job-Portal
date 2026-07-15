@@ -9,6 +9,8 @@ export function categoryBadgeClass(category: JobCategory): string {
       return 'bg-blue-50 text-blue-700 border border-blue-200';
     case 'internship':
       return 'bg-amber-50 text-amber-700 border border-amber-200';
+    case 'exam':
+      return 'bg-indigo-50 text-indigo-700 border border-indigo-200';
     default:
       return 'bg-zinc-100 text-zinc-600 border border-zinc-200';
   }
@@ -23,8 +25,24 @@ export function categoryLabel(category: JobCategory): string {
       return 'Corporate';
     case 'internship':
       return 'Internship';
+    case 'exam':
+      return 'Exam';
     default:
       return category;
+  }
+}
+
+/** Human-readable label for a work mode. */
+export function workModeLabel(mode?: string | null): string {
+  switch (mode) {
+    case 'onsite':
+      return 'On-site';
+    case 'hybrid':
+      return 'Hybrid';
+    case 'remote':
+      return 'Remote';
+    default:
+      return '';
   }
 }
 

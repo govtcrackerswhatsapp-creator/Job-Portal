@@ -1,6 +1,8 @@
 export type Role = 'superadmin' | 'manager' | 'user';
 
-export type JobCategory = 'government' | 'corporate' | 'internship';
+export type JobCategory = 'government' | 'corporate' | 'internship' | 'exam';
+
+export type WorkMode = 'onsite' | 'hybrid' | 'remote';
 
 export interface UserProfile {
   uid: string;
@@ -42,6 +44,13 @@ export interface Job {
   studyMaterial?: string;
   customSections?: JobSection[];
   linkButtons?: JobLinkButton[];
+  companyName?: string;
+  companyLogo?: string;
+  salary?: string;
+  experience?: string;
+  location?: string;
+  workMode?: WorkMode | '';
+  skills?: string[];
   createdAt: number;
   createdBy: string;
 }

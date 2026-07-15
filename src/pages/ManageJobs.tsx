@@ -3,7 +3,7 @@ import { db } from '../lib/firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { getJobs, clearJobsCache } from '../lib/jobsData';
-import { Job, JobCategory, JobSection, JobLinkButton } from '../types';
+import { Job, JobCategory, JobSection, JobLinkButton, WorkMode } from '../types';
 import { categoryBadgeClass, categoryLabel, formatDate } from '../lib/format';
 import { Plus, Pencil, Trash2, X, Loader2, Save, Briefcase, AlertTriangle, ArrowUp, ArrowDown, Link as LinkIcon } from 'lucide-react';
 
@@ -19,12 +19,20 @@ interface JobFormState {
   studyMaterial: string;
   customSections: JobSection[];
   linkButtons: JobLinkButton[];
+  companyName: string;
+  companyLogo: string;
+  salary: string;
+  experience: string;
+  location: string;
+  workMode: WorkMode | '';
+  skills: string;
 }
 
 const EMPTY_JOB: JobFormState = {
   title: '', category: 'government', ageLimit: '',
   notificationDate: null, applicationStartDate: null, applicationEndDate: null,
   educationalQualification: '', examDetails: '', studyMaterial: '', customSections: [], linkButtons: [],
+  companyName: '', companyLogo: '', salary: '', experience: '', location: '', workMode: '', skills: '',
 };
 
 const inputCls = 'w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30 focus:border-[#8b2df2] bg-white';
@@ -93,6 +101,9 @@ export default function ManageJobs() {
       educationalQualification: job.educationalQualification, examDetails: job.examDetails || '', studyMaterial: job.studyMaterial || '',
       customSections: job.customSections ? [...job.customSections] : [],
       linkButtons: job.linkButtons ? [...job.linkButtons] : [],
+      companyName: job.companyName || '', companyLogo: job.companyLogo || '', salary: job.salary || '',
+      experience: job.experience || '', location: job.location || '', workMode: job.workMode || '',
+      skills: (job.skills || []).join(', '),
     });
     setEditingId(job.id || null);
     setShowForm(true);
@@ -138,7 +149,19 @@ export default function ManageJobs() {
       const cleanButtons = form.linkButtons
         .filter((b) => b.text.trim() && b.url.trim())
         .map((b) => ({ text: b.text.trim(), url: b.url.trim(), bgColor: b.bgColor || '#8b2df2', textColor: b.textColor || '#ffffff' }));
-      const payload = { ...form, customSections: cleanSections, linkButtons: cleanButtons };
+      const cleanSkills = form.skills.split(',').map((s) => s.trim()).filter(Boolean);
+      const payload = {
+        ...form,
+        customSections: cleanSections,
+        linkButtons: cleanButtons,
+        companyName: form.companyName.trim(),
+        companyLogo: form.companyLogo.trim(),
+        salary: form.salary.trim(),
+        experience: form.experience.trim(),
+        location: form.location.trim(),
+        workMode: form.workMode,
+        skills: cleanSkills,
+      };
       if (editingId) {
         await updateDoc(doc(db, 'jobs', editingId), payload as any);
       } else {
@@ -215,13 +238,49 @@ export default function ManageJobs() {
                   <option value="government">Government</option>
                   <option value="corporate">Corporate</option>
                   <option value="internship">Internship</option>
+                  <option value="exam">Exam</option>
                 </select>
               </Field>
               <Field label="Age Limit">
                 <input className={inputCls} value={form.ageLimit} onChange={(e) => setForm({ ...form, ageLimit: e.target.value })} placeholder="e.g. 18-30 years" />
               </Field>
             </div>
-            <div className="grid sm:grid-cols-3 gap-4">
+
+            <div className="pt-2 border-t border-zinc-100">
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-3">Card details (shown on the job card — all optional)</p>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <Field label="Company / Organisation name">
+                  <input className={inputCls} value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} placeholder="e.g. Google, SSC" />
+                </Field>
+                <Field label="Company logo URL (blank = auto letter tile)">
+                  <input className={inputCls} value={form.companyLogo} onChange={(e) => setForm({ ...form, companyLogo: e.target.value })} placeholder="https://i.ibb.co/..." />
+                </Field>
+                <Field label="Salary / Pay (blank = hidden)">
+                  <input className={inputCls} value={form.salary} onChange={(e) => setForm({ ...form, salary: e.target.value })} placeholder="e.g. 15 - 25 LPA" />
+                </Field>
+                <Field label="Experience (blank = hidden)">
+                  <input className={inputCls} value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })} placeholder="e.g. 2 - 5 Yrs" />
+                </Field>
+                <Field label="Location (blank = hidden)">
+                  <input className={inputCls} value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="e.g. Bangalore, India" />
+                </Field>
+                <Field label="Work mode (blank = hidden)">
+                  <select className={inputCls} value={form.workMode} onChange={(e) => setForm({ ...form, workMode: e.target.value as WorkMode | '' })}>
+                    <option value="">— None —</option>
+                    <option value="onsite">On-site</option>
+                    <option value="hybrid">Hybrid</option>
+                    <option value="remote">Remote</option>
+                  </select>
+                </Field>
+              </div>
+              <div className="mt-4">
+                <Field label="Skills (comma-separated, blank = hidden)">
+                  <input className={inputCls} value={form.skills} onChange={(e) => setForm({ ...form, skills: e.target.value })} placeholder="e.g. Python, C++, React" />
+                </Field>
+              </div>
+            </div>
+
+            <div className="grid sm:grid-cols-3 gap-4 pt-2 border-t border-zinc-100">
               <Field label="Notification Date">
                 <input type="date" className={inputCls} value={dateToInput(form.notificationDate)} onChange={(e) => setForm({ ...form, notificationDate: inputToTimestamp(e.target.value) })} />
               </Field>
@@ -272,12 +331,12 @@ export default function ManageJobs() {
                 <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Link Buttons</p>
                 <button onClick={addButton} className="inline-flex items-center gap-1 text-sm font-medium text-[#8b2df2] hover:underline"><Plus className="w-4 h-4" /> Add Button</button>
               </div>
-              <p className="text-xs text-zinc-400 mb-3">Action buttons shown at the bottom for subscribers (e.g. "Apply Here", "Official Notification"). Non-subscribers see them but are sent to the subscribe page.</p>
+              <p className="text-xs text-zinc-400 mb-3">Informational links shown on the details page for subscribers (e.g. "Official Notification", "Official Website").</p>
               <div className="space-y-3">
                 {form.linkButtons.map((btn, i) => (
                   <div key={i} className="bg-zinc-50 rounded-xl p-3 border border-zinc-100 space-y-2">
                     <div className="flex items-center gap-2">
-                      <input className={inputCls + ' flex-1'} value={btn.text} onChange={(e) => updateButton(i, 'text', e.target.value)} placeholder="Button text (e.g. Apply Here)" />
+                      <input className={inputCls + ' flex-1'} value={btn.text} onChange={(e) => updateButton(i, 'text', e.target.value)} placeholder="Button text (e.g. Official Notification)" />
                       <button onClick={() => moveButton(i, -1)} disabled={i === 0} className="p-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30"><ArrowUp className="w-4 h-4" /></button>
                       <button onClick={() => moveButton(i, 1)} disabled={i === form.linkButtons.length - 1} className="p-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30"><ArrowDown className="w-4 h-4" /></button>
                       <button onClick={() => removeButton(i)} className="p-1.5 text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
@@ -309,7 +368,7 @@ export default function ManageJobs() {
                   </div>
                 ))}
                 {form.linkButtons.length === 0 && (
-                  <p className="text-sm text-zinc-400">No buttons yet. Add one to link users to application forms, notifications, etc.</p>
+                  <p className="text-sm text-zinc-400">No buttons yet. Add one to link users to official notifications, websites, etc.</p>
                 )}
               </div>
             </div>

@@ -5,14 +5,15 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { getJob } from '../lib/jobsData';
 import { Job } from '../types';
-import { categoryBadgeClass, categoryLabel, formatDate } from '../lib/format';
-import { Bookmark, Trash2, Loader2, ArrowRight, Calendar, Users } from 'lucide-react';
+import JobCard from '../components/JobCard';
+import { Bookmark, Loader2 } from 'lucide-react';
 
 export default function Cart() {
   const { user } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) load();
@@ -44,16 +45,24 @@ export default function Cart() {
     }
   };
 
-  const remove = async (jobId: string) => {
-    if (!user) return;
-    const next = savedIds.filter((id) => id !== jobId);
-    await setDoc(doc(db, 'carts', user.uid), { jobIds: next });
-    setSavedIds(next);
-    setJobs(jobs.filter((j) => j.id !== jobId));
+  // On the saved page, toggling always removes (they're all saved here).
+  const toggleSave = async (jobId: string) => {
+    if (!user || !jobId) return;
+    try {
+      setSavingId(jobId);
+      const next = savedIds.filter((id) => id !== jobId);
+      await setDoc(doc(db, 'carts', user.uid), { jobIds: next });
+      setSavedIds(next);
+      setJobs((prev) => prev.filter((j) => j.id !== jobId));
+    } catch (e) {
+      console.error('Error removing saved job:', e);
+    } finally {
+      setSavingId(null);
+    }
   };
 
   return (
-    <div className="p-6 md:p-8 max-w-3xl mx-auto">
+    <div className="p-6 md:p-8 max-w-6xl mx-auto">
       <div className="mb-6">
         <p className="text-xs font-semibold uppercase tracking-wider text-[#8b2df2]">Shortlist</p>
         <h1 className="font-heading text-3xl font-bold text-zinc-900">My Saved Jobs</h1>
@@ -68,32 +77,17 @@ export default function Cart() {
           <Link to="/dashboard" className="text-[#8b2df2] font-medium hover:underline">Browse jobs →</Link>
         </div>
       ) : (
-        <div className="grid gap-3">
-          {jobs.map((job) => (
-            <div key={job.id} className="bg-white rounded-2xl shadow-soft p-5 flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${categoryBadgeClass(job.category)}`}>{categoryLabel(job.category)}</span>
-                  {job.applicationEndDate && (
-                    <span className="inline-flex items-center gap-1 text-xs text-zinc-400">
-                      <Calendar className="w-3 h-3" /> Last date: {formatDate(job.applicationEndDate)}
-                    </span>
-                  )}
-                  <span className="inline-flex items-center gap-1 text-xs text-zinc-400">
-                    <Users className="w-3 h-3" /> Age: {job.ageLimit || '—'}
-                  </span>
-                </div>
-                <Link to={`/job/${job.id}`}>
-                  <h3 className="font-semibold text-zinc-900 hover:text-[#8b2df2] transition">{job.title}</h3>
-                </Link>
-                <Link to={`/job/${job.id}`} className="inline-flex items-center gap-1 text-sm font-medium text-[#8b2df2] mt-2 hover:gap-2 transition-all">
-                  View details <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
-              <button onClick={() => remove(job.id || '')} className="p-2 text-zinc-300 hover:text-red-600 transition shrink-0" title="Remove">
-                <Trash2 className="w-5 h-5" />
-              </button>
-            </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {jobs.map((job, i) => (
+            <JobCard
+              key={job.id}
+              job={job}
+              index={i}
+              user={user}
+              isSaved={true}
+              onToggleSave={toggleSave}
+              savingId={savingId}
+            />
           ))}
         </div>
       )}
