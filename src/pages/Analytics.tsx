@@ -8,15 +8,31 @@ import { formatRupees, formatDate } from '../lib/format';
 import { Loader2, IndianRupee, CheckCircle2, Receipt, Download, Trash2, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 
 const PAGE_SIZE = 20;
-type StatusFilter = 'all' | 'success' | 'failed' | 'pending';
-type DateFilter = 'all' | '7d' | '30d' | '90d';
+type DateFilter = 'all' | '7d' | '30d' | '90d' | 'custom';
+
+function dateToInput(ms: number | null): string {
+  if (!ms) return '';
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function inputToStart(value: string): number | null {
+  if (!value) return null;
+  const ms = new Date(value + 'T00:00:00').getTime();
+  return isNaN(ms) ? null : ms;
+}
+function inputToEnd(value: string): number | null {
+  if (!value) return null;
+  const ms = new Date(value + 'T23:59:59.999').getTime();
+  return isNaN(ms) ? null : ms;
+}
 
 export default function Analytics() {
   const { user } = useAuth();
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
+  const [customFrom, setCustomFrom] = useState<string>('');
+  const [customTo, setCustomTo] = useState<string>('');
   const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -37,16 +53,21 @@ export default function Analytics() {
     }
   };
 
-  // Apply filters (used by stats, export, and the table).
+  // Apply date filter (used by stats, export, and the table).
   const filtered = useMemo(() => {
     const now = Date.now();
+    if (dateFilter === 'custom') {
+      const from = inputToStart(customFrom);
+      const to = inputToEnd(customTo);
+      return payments.filter((p) => {
+        const afterFrom = from === null || p.createdAt >= from;
+        const beforeTo = to === null || p.createdAt <= to;
+        return afterFrom && beforeTo;
+      });
+    }
     const cutoff = dateFilter === '7d' ? now - 7 * 864e5 : dateFilter === '30d' ? now - 30 * 864e5 : dateFilter === '90d' ? now - 90 * 864e5 : 0;
-    return payments.filter((p) => {
-      const matchStatus = statusFilter === 'all' || p.status === statusFilter;
-      const matchDate = !cutoff || p.createdAt >= cutoff;
-      return matchStatus && matchDate;
-    });
-  }, [payments, statusFilter, dateFilter]);
+    return payments.filter((p) => !cutoff || p.createdAt >= cutoff);
+  }, [payments, dateFilter, customFrom, customTo]);
 
   // Stats operate on the FULL filtered set (not just the current page).
   const stats = useMemo(() => {
@@ -61,7 +82,7 @@ export default function Analytics() {
   const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   // Reset to page 1 when filters change
-  useEffect(() => { setPage(1); }, [statusFilter, dateFilter]);
+  useEffect(() => { setPage(1); }, [dateFilter, customFrom, customTo]);
 
   const exportExcel = () => {
     const rows = filtered.map((p) => ({
@@ -148,13 +169,19 @@ export default function Analytics() {
           <option value="7d">Last 7 days</option>
           <option value="30d">Last 30 days</option>
           <option value="90d">Last 90 days</option>
+          <option value="custom">Custom range</option>
         </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)} className="px-3 py-2 rounded-lg border border-zinc-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30">
-          <option value="all">All statuses</option>
-          <option value="success">Success</option>
-          <option value="pending">Pending</option>
-          <option value="failed">Failed</option>
-        </select>
+        {dateFilter === 'custom' && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="text-xs text-zinc-500">From</label>
+            <input type="date" value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)} className="px-3 py-2 rounded-lg border border-zinc-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30" />
+            <label className="text-xs text-zinc-500">To</label>
+            <input type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)} className="px-3 py-2 rounded-lg border border-zinc-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30" />
+            {(customFrom || customTo) && (
+              <button onClick={() => { setCustomFrom(''); setCustomTo(''); }} className="text-xs text-zinc-500 hover:text-zinc-800 underline">Clear</button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Table */}
