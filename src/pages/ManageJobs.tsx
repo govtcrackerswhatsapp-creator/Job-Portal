@@ -5,6 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { getJobs, clearJobsCache } from '../lib/jobsData';
 import { Job, JobCategory, JobSection, JobLinkButton, WorkMode } from '../types';
 import { categoryBadgeClass, categoryLabel, formatDate } from '../lib/format';
+import { sanitizeHtml, isEmptyHtml } from '../lib/richText';
+import RichTextEditor from '../components/RichTextEditor';
 import { Plus, Pencil, Trash2, X, Loader2, Save, Briefcase, AlertTriangle, ArrowUp, ArrowDown, Link as LinkIcon } from 'lucide-react';
 
 interface JobFormState {
@@ -75,6 +77,12 @@ export default function ManageJobs() {
   const [view, setView] = useState<'active' | 'expired'>('active');
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
+  // The rich-text editors are uncontrolled (that is what stops the caret jumping).
+  // Bumping these counters changes their React `key`, forcing a clean remount with
+  // fresh content — needed whenever we load a different record or reshuffle sections.
+  const [formKey, setFormKey] = useState(0);
+  const [sectionsKey, setSectionsKey] = useState(0);
+
   useEffect(() => { fetchJobs(); }, []);
 
   const fetchJobs = async () => {
@@ -93,7 +101,14 @@ export default function ManageJobs() {
   const expiredJobs = useMemo(() => jobs.filter((j) => isExpired(j)), [jobs]);
   const shownJobs = view === 'active' ? activeJobs : expiredJobs;
 
-  const openCreate = () => { setForm({ ...EMPTY_JOB }); setEditingId(null); setShowForm(true); };
+  const openCreate = () => {
+    setForm({ ...EMPTY_JOB });
+    setEditingId(null);
+    setFormKey((k) => k + 1);
+    setSectionsKey((k) => k + 1);
+    setShowForm(true);
+  };
+
   const openEdit = (job: Job) => {
     setForm({
       title: job.title, category: job.category, ageLimit: job.ageLimit,
@@ -106,19 +121,29 @@ export default function ManageJobs() {
       skills: (job.skills || []).join(', '),
     });
     setEditingId(job.id || null);
+    setFormKey((k) => k + 1);
+    setSectionsKey((k) => k + 1);
     setShowForm(true);
   };
 
-  const addSection = () => setForm({ ...form, customSections: [...form.customSections, { title: '', content: '' }] });
+  const addSection = () => {
+    setForm((f) => ({ ...f, customSections: [...f.customSections, { title: '', content: '' }] }));
+    setSectionsKey((k) => k + 1);
+  };
   const updateSection = (i: number, field: keyof JobSection, value: string) => {
-    const sections = [...form.customSections];
-    sections[i] = { ...sections[i], [field]: value };
-    setForm({ ...form, customSections: sections });
+    setForm((f) => {
+      const sections = [...f.customSections];
+      sections[i] = { ...sections[i], [field]: value };
+      return { ...f, customSections: sections };
+    });
   };
   const removeSection = (i: number) => {
-    const sections = [...form.customSections];
-    sections.splice(i, 1);
-    setForm({ ...form, customSections: sections });
+    setForm((f) => {
+      const sections = [...f.customSections];
+      sections.splice(i, 1);
+      return { ...f, customSections: sections };
+    });
+    setSectionsKey((k) => k + 1);
   };
 
   const addButton = () => setForm({ ...form, linkButtons: [...form.linkButtons, { text: '', url: '', bgColor: '#8b2df2', textColor: '#ffffff' }] });
@@ -145,13 +170,21 @@ export default function ManageJobs() {
     if (!form.title.trim()) { alert('Please enter a job title.'); return; }
     try {
       setSaving(true);
-      const cleanSections = form.customSections.filter((s) => s.title.trim() || s.content.trim());
+      // Rich-text fields are sanitised here, so only allow-listed markup ever
+      // reaches Firestore. Sections with no title AND no content are dropped.
+      const cleanSections = form.customSections
+        .filter((s) => s.title.trim() || !isEmptyHtml(s.content))
+        .map((s) => ({ title: s.title.trim(), content: sanitizeHtml(s.content) }));
       const cleanButtons = form.linkButtons
         .filter((b) => b.text.trim() && b.url.trim())
         .map((b) => ({ text: b.text.trim(), url: b.url.trim(), bgColor: b.bgColor || '#8b2df2', textColor: b.textColor || '#ffffff' }));
       const cleanSkills = form.skills.split(',').map((s) => s.trim()).filter(Boolean);
       const payload = {
         ...form,
+        ageLimit: isEmptyHtml(form.ageLimit) ? '' : sanitizeHtml(form.ageLimit),
+        educationalQualification: isEmptyHtml(form.educationalQualification) ? '' : sanitizeHtml(form.educationalQualification),
+        examDetails: isEmptyHtml(form.examDetails) ? '' : sanitizeHtml(form.examDetails),
+        studyMaterial: isEmptyHtml(form.studyMaterial) ? '' : sanitizeHtml(form.studyMaterial),
         customSections: cleanSections,
         linkButtons: cleanButtons,
         companyName: form.companyName.trim(),
@@ -228,11 +261,18 @@ export default function ManageJobs() {
             <h2 className="font-heading text-lg font-semibold text-zinc-900">{editingId ? 'Edit Job' : 'Create New Job'}</h2>
             <button onClick={() => setShowForm(false)} className="p-1.5 text-zinc-400 hover:text-zinc-700"><X className="w-5 h-5" /></button>
           </div>
+
+          <div className="bg-[#8b2df2]/5 border border-[#8b2df2]/15 rounded-xl p-3 mb-5 text-xs text-zinc-600 leading-relaxed">
+            <strong className="text-zinc-800">Formatting:</strong> use the toolbar for bold, italic, underline, bullet points and numbering.
+            Pasted text keeps its line breaks and is cleaned of outside styling automatically.
+          </div>
+
           <div className="space-y-4">
             <Field label="Job Title">
               <input className={inputCls} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. SSC CGL 2026 Notification" />
             </Field>
-            <div className="grid sm:grid-cols-2 gap-4">
+
+            <div className="sm:max-w-xs">
               <Field label="Category">
                 <select className={inputCls} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value as JobCategory })}>
                   <option value="government">Government</option>
@@ -241,10 +281,17 @@ export default function ManageJobs() {
                   <option value="exam">Exam</option>
                 </select>
               </Field>
-              <Field label="Age Limit">
-                <input className={inputCls} value={form.ageLimit} onChange={(e) => setForm({ ...form, ageLimit: e.target.value })} placeholder="e.g. 18-30 years" />
-              </Field>
             </div>
+
+            <Field label="Age Limit">
+              <RichTextEditor
+                key={`${formKey}-age`}
+                value={form.ageLimit}
+                onChange={(html) => setForm((f) => ({ ...f, ageLimit: html }))}
+                placeholder="e.g. 18-30 years. AGE: 40 years for UR/EWS, 43 for OBC, 45 for SC/ST."
+                minHeight={90}
+              />
+            </Field>
 
             <div className="pt-2 border-t border-zinc-100">
               <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-3">Card details (shown on the job card — all optional)</p>
@@ -291,20 +338,41 @@ export default function ManageJobs() {
                 <input type="date" className={inputCls} value={dateToInput(form.applicationEndDate)} onChange={(e) => setForm({ ...form, applicationEndDate: inputToTimestamp(e.target.value) })} />
               </Field>
             </div>
+
             <Field label="Educational Qualification">
-              <textarea className={inputCls} rows={2} value={form.educationalQualification} onChange={(e) => setForm({ ...form, educationalQualification: e.target.value })} placeholder="e.g. Bachelor's degree in any discipline" />
+              <RichTextEditor
+                key={`${formKey}-edu`}
+                value={form.educationalQualification}
+                onChange={(html) => setForm((f) => ({ ...f, educationalQualification: html }))}
+                placeholder="Paste the vacancy details here — line breaks and numbering are preserved."
+                minHeight={200}
+              />
             </Field>
+
             <div className="pt-2 border-t border-zinc-100">
               <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-3">Premium content (visible to subscribers)</p>
               <Field label="Exam Details">
-                <textarea className={inputCls} rows={3} value={form.examDetails} onChange={(e) => setForm({ ...form, examDetails: e.target.value })} placeholder="Exam pattern, syllabus, dates..." />
+                <RichTextEditor
+                  key={`${formKey}-exam`}
+                  value={form.examDetails}
+                  onChange={(html) => setForm((f) => ({ ...f, examDetails: html }))}
+                  placeholder="Exam pattern, syllabus, dates..."
+                  minHeight={150}
+                />
               </Field>
               <div className="mt-4">
                 <Field label="Study Material">
-                  <textarea className={inputCls} rows={3} value={form.studyMaterial} onChange={(e) => setForm({ ...form, studyMaterial: e.target.value })} placeholder="Recommended books, links, tips..." />
+                  <RichTextEditor
+                    key={`${formKey}-study`}
+                    value={form.studyMaterial}
+                    onChange={(html) => setForm((f) => ({ ...f, studyMaterial: html }))}
+                    placeholder="Recommended books, links, tips..."
+                    minHeight={150}
+                  />
                 </Field>
               </div>
             </div>
+
             <div className="pt-2 border-t border-zinc-100">
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Custom Sections</p>
@@ -312,12 +380,18 @@ export default function ManageJobs() {
               </div>
               <div className="space-y-3">
                 {form.customSections.map((section, i) => (
-                  <div key={i} className="bg-zinc-50 rounded-xl p-3 border border-zinc-100">
+                  <div key={`${sectionsKey}-${i}`} className="bg-zinc-50 rounded-xl p-3 border border-zinc-100">
                     <div className="flex items-center gap-2 mb-2">
                       <input className={inputCls + ' flex-1'} value={section.title} onChange={(e) => updateSection(i, 'title', e.target.value)} placeholder="Section title" />
                       <button onClick={() => removeSection(i)} className="p-2 text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
                     </div>
-                    <textarea className={inputCls} rows={2} value={section.content} onChange={(e) => updateSection(i, 'content', e.target.value)} placeholder="Section content" />
+                    <RichTextEditor
+                      key={`${formKey}-${sectionsKey}-sec-${i}`}
+                      value={section.content}
+                      onChange={(html) => updateSection(i, 'content', html)}
+                      placeholder="Section content"
+                      minHeight={120}
+                    />
                   </div>
                 ))}
                 {form.customSections.length === 0 && (

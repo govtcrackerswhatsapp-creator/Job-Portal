@@ -5,6 +5,7 @@ import { hasPortalAccess } from '../lib/access';
 import { getJob } from '../lib/jobsData';
 import { Job } from '../types';
 import { categoryBadgeClass, categoryLabel, workModeLabel, formatDate } from '../lib/format';
+import { FormattedText, isEmptyHtml } from '../lib/richText';
 import { ArrowLeft, Calendar, GraduationCap, Users, Loader2, FileText, BookOpen, ExternalLink, MapPin, Briefcase, IndianRupee, BadgeCheck, Code2, Info, Building2 } from 'lucide-react';
 
 function initials(name: string): string {
@@ -15,6 +16,7 @@ function initials(name: string): string {
   return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
 }
 
+/** Short, single-line values (dates, salary, location...). */
 function SummaryItem({ icon: Icon, label, value }: { icon: typeof Calendar; label: string; value: string }) {
   if (!value) return null;
   return (
@@ -24,7 +26,24 @@ function SummaryItem({ icon: Icon, label, value }: { icon: typeof Calendar; labe
       </div>
       <div className="min-w-0">
         <p className="text-xs text-zinc-400">{label}</p>
-        <p className="text-sm font-medium text-zinc-900 break-words">{value}</p>
+        {/* whitespace-pre-wrap so multi-line values keep their line breaks */}
+        <p className="text-sm font-medium text-zinc-900 break-words whitespace-pre-wrap">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Long, formatted values (age limit, qualifications) — renders lists, bold, line breaks. */
+function RichItem({ icon: Icon, label, value }: { icon: typeof Calendar; label: string; value?: string | null }) {
+  if (isEmptyHtml(value)) return null;
+  return (
+    <div className="flex items-start gap-3">
+      <div className="w-8 h-8 rounded-lg bg-[#8b2df2]/10 flex items-center justify-center shrink-0">
+        <Icon className="w-4 h-4 text-[#8b2df2]" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-zinc-400 mb-0.5">{label}</p>
+        <FormattedText value={value} className="text-sm text-zinc-800 leading-relaxed break-words" />
       </div>
     </div>
   );
@@ -82,6 +101,8 @@ export default function JobDetails() {
   const skills = (job.skills || []).filter((s) => s.trim());
   const wm = workModeLabel(job.workMode);
   const linkButtons = (job.linkButtons || []).filter((b) => b.text?.trim() && b.url?.trim());
+  const customSections = (job.customSections || []).filter((s) => s.title?.trim() || !isEmptyHtml(s.content));
+  const hasSummary = !!(job.experience || job.salary || job.location || wm || job.applicationEndDate) || !isEmptyHtml(job.ageLimit);
 
   return (
     <div className="p-6 md:p-8 max-w-6xl mx-auto">
@@ -129,42 +150,46 @@ export default function JobDetails() {
           {/* Key info */}
           <div className="bg-white rounded-2xl shadow-soft p-6">
             <h2 className="font-heading text-base font-semibold text-zinc-900 mb-4">Key Information</h2>
-            <div className="grid sm:grid-cols-2 gap-4">
+            <div className="grid sm:grid-cols-3 gap-4">
               <SummaryItem icon={Calendar} label="Notification Date" value={formatDate(job.notificationDate)} />
               <SummaryItem icon={Calendar} label="Application Start" value={formatDate(job.applicationStartDate)} />
               <SummaryItem icon={Calendar} label="Last Date to Apply" value={formatDate(job.applicationEndDate)} />
-              <SummaryItem icon={Users} label="Age Limit" value={job.ageLimit} />
-              <div className="sm:col-span-2">
-                <SummaryItem icon={GraduationCap} label="Educational Qualification" value={job.educationalQualification} />
-              </div>
             </div>
+            {(!isEmptyHtml(job.ageLimit) || !isEmptyHtml(job.educationalQualification)) && (
+              <div className="space-y-5 mt-5 pt-5 border-t border-zinc-100">
+                <RichItem icon={Users} label="Age Limit" value={job.ageLimit} />
+                <RichItem icon={GraduationCap} label="Educational Qualification" value={job.educationalQualification} />
+              </div>
+            )}
           </div>
 
-          {job.examDetails?.trim() && (
+          {!isEmptyHtml(job.examDetails) && (
             <div className="bg-white rounded-2xl shadow-soft p-6">
               <div className="flex items-center gap-2 mb-3">
                 <FileText className="w-5 h-5 text-[#8b2df2]" />
                 <h2 className="font-heading text-base font-semibold text-zinc-900">Exam Details</h2>
               </div>
-              <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">{job.examDetails}</p>
+              <FormattedText value={job.examDetails} className="text-sm text-zinc-700 leading-relaxed" />
             </div>
           )}
-          {job.studyMaterial?.trim() && (
+
+          {!isEmptyHtml(job.studyMaterial) && (
             <div className="bg-white rounded-2xl shadow-soft p-6">
               <div className="flex items-center gap-2 mb-3">
                 <BookOpen className="w-5 h-5 text-[#8b2df2]" />
                 <h2 className="font-heading text-base font-semibold text-zinc-900">Study Material</h2>
               </div>
-              <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">{job.studyMaterial}</p>
+              <FormattedText value={job.studyMaterial} className="text-sm text-zinc-700 leading-relaxed" />
             </div>
           )}
-          {job.customSections?.map((section, i) => (
-            (section.title?.trim() || section.content?.trim()) ? (
-              <div key={i} className="bg-white rounded-2xl shadow-soft p-6">
+
+          {customSections.map((section, i) => (
+            <div key={i} className="bg-white rounded-2xl shadow-soft p-6">
+              {section.title?.trim() && (
                 <h2 className="font-heading text-base font-semibold text-zinc-900 mb-3">{section.title}</h2>
-                <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">{section.content}</p>
-              </div>
-            ) : null
+              )}
+              <FormattedText value={section.content} className="text-sm text-zinc-700 leading-relaxed" />
+            </div>
           ))}
 
           {linkButtons.length > 0 && (
@@ -190,9 +215,9 @@ export default function JobDetails() {
               <SummaryItem icon={IndianRupee} label="Salary" value={job.salary || ''} />
               <SummaryItem icon={MapPin} label="Location" value={job.location || ''} />
               <SummaryItem icon={Building2} label="Work Mode" value={wm} />
-              <SummaryItem icon={Users} label="Age Limit" value={job.ageLimit} />
+              <RichItem icon={Users} label="Age Limit" value={job.ageLimit} />
               <SummaryItem icon={Calendar} label="Last Date" value={formatDate(job.applicationEndDate)} />
-              {!job.experience && !job.salary && !job.location && !wm && !job.ageLimit && !job.applicationEndDate && (
+              {!hasSummary && (
                 <p className="text-sm text-zinc-400">No summary details added.</p>
               )}
             </div>
