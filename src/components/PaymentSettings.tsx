@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { db } from '../lib/firebase';
-import { collection, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
-import { SubscriptionPlan } from '../types';
+import { collection, addDoc, updateDoc, deleteDoc, doc, deleteField } from 'firebase/firestore';
+import { SubscriptionPlan, PlanTier } from '../types';
 import { formatRupees } from '../lib/format';
 import { getPlans, clearPlansCache } from '../lib/plansData';
-import { Plus, Pencil, Trash2, X, Loader2, Save, IndianRupee } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Loader2, Save, IndianRupee, CalendarClock } from 'lucide-react';
+
+interface TierRow { id: string; label: string; days: string; price: string; }
 
 interface PlanForm {
   name: string;
@@ -15,9 +17,13 @@ interface PlanForm {
   badge: string;
   features: string;
   active: boolean;
+  tiers: TierRow[];
 }
 
-const EMPTY: PlanForm = { name: '', price: '', annualPrice: '', durationInDays: '30', details: '', badge: '', features: '', active: true };
+const EMPTY: PlanForm = { name: '', price: '', annualPrice: '', durationInDays: '30', details: '', badge: '', features: '', active: true, tiers: [] };
+
+// Stable random id for a tier, so reordering/renaming never changes which tier a price resolves to.
+const newTierId = () => 't_' + Math.random().toString(36).slice(2, 8);
 
 const inputCls = 'w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30 focus:border-[#8b2df2] bg-white';
 
@@ -55,16 +61,35 @@ export default function PaymentSettings() {
       badge: p.badge || '',
       features: (p.features || []).join('\n'),
       active: p.active,
+      tiers: (p.tiers || []).map((t) => ({ id: t.id || newTierId(), label: t.label, days: String(t.days), price: String(t.price) })),
     });
     setEditingId(p.id || null);
     setShowForm(true);
   };
 
+  // ---- Tier editor helpers ----
+  const addTier = () => setForm((f) => ({ ...f, tiers: [...f.tiers, { id: newTierId(), label: '', days: '30', price: '' }] }));
+  const updateTier = (i: number, key: keyof TierRow, value: string) =>
+    setForm((f) => { const tiers = [...f.tiers]; tiers[i] = { ...tiers[i], [key]: value }; return { ...f, tiers }; });
+  const removeTier = (i: number) =>
+    setForm((f) => { const tiers = [...f.tiers]; tiers.splice(i, 1); return { ...f, tiers }; });
+
   const handleSave = async () => {
-    const priceNum = parseInt(form.price, 10);
-    const durationNum = parseInt(form.durationInDays, 10);
+    // Clean the tier rows first: keep only complete rows (label + days≥1 + price≥1).
+    const cleanTiers: PlanTier[] = form.tiers
+      .map((t) => ({ id: t.id || newTierId(), label: t.label.trim(), days: parseInt(t.days, 10), price: parseInt(t.price, 10) }))
+      .filter((t) => t.label && !isNaN(t.days) && t.days >= 1 && !isNaN(t.price) && t.price >= 1);
+
+    // If tiers are used, the FIRST tier is the base: it mirrors into price/durationInDays
+    // so the landing page and the existing (non-tier) payment path keep working unchanged.
+    const hasTiers = cleanTiers.length > 0;
+    const priceNum = hasTiers ? cleanTiers[0].price : parseInt(form.price, 10);
+    const durationNum = hasTiers ? cleanTiers[0].days : parseInt(form.durationInDays, 10);
+
     if (!form.name.trim() || isNaN(priceNum) || priceNum < 1 || isNaN(durationNum) || durationNum < 1) {
-      alert('Please enter a valid name, price (≥1), and duration (≥1 day).');
+      alert(hasTiers
+        ? 'Please enter a valid name, and make sure your first duration row has a label, days (≥1) and price (≥1).'
+        : 'Please enter a valid name, price (≥1), and duration (≥1 day).');
       return;
     }
     try {
@@ -78,8 +103,14 @@ export default function PaymentSettings() {
         badge: form.badge.trim(),
         features: form.features.split('\n').map((f) => f.trim()).filter(Boolean),
         active: form.active,
+        // Only write tiers when there are some; otherwise omit so the plan stays
+        // a plain monthly/annual plan exactly as before.
+        ...(hasTiers ? { tiers: cleanTiers } : {}),
       };
       if (editingId) {
+        // When editing and tiers were cleared, remove the stored array so the
+        // plan reverts to a plain monthly/annual plan.
+        if (!hasTiers) payload.tiers = deleteField();
         await updateDoc(doc(db, 'plans', editingId), payload);
       } else {
         await addDoc(collection(db, 'plans'), payload);
@@ -131,7 +162,7 @@ export default function PaymentSettings() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-zinc-700 mb-1">Monthly Price (₹)</label>
-                <input type="number" min="1" className={inputCls} value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="499" />
+                <input type="number" min="1" disabled={form.tiers.length > 0} className={inputCls + (form.tiers.length > 0 ? ' opacity-50' : '')} value={form.tiers.length > 0 ? (form.tiers[0].price || '') : form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="499" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-zinc-700 mb-1">Annual Price (₹) <span className="text-zinc-400 font-normal">optional</span></label>
@@ -140,7 +171,49 @@ export default function PaymentSettings() {
             </div>
             <div>
               <label className="block text-sm font-medium text-zinc-700 mb-1">Duration (days, for monthly)</label>
-              <input type="number" min="1" className={inputCls} value={form.durationInDays} onChange={(e) => setForm({ ...form, durationInDays: e.target.value })} placeholder="30" />
+              <input type="number" min="1" disabled={form.tiers.length > 0} className={inputCls + (form.tiers.length > 0 ? ' opacity-50' : '')} value={form.tiers.length > 0 ? (form.tiers[0].days || '') : form.durationInDays} onChange={(e) => setForm({ ...form, durationInDays: e.target.value })} placeholder="30" />
+              {form.tiers.length > 0 && <span className="block text-[10px] text-zinc-400 mt-0.5">Set by your first duration row below.</span>}
+            </div>
+
+            {/* ---- Custom duration tiers (optional) ---- */}
+            <div className="rounded-xl border border-[#8b2df2]/20 bg-[#8b2df2]/5 p-3">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="inline-flex items-center gap-1.5">
+                  <CalendarClock className="w-4 h-4 text-[#8b2df2]" />
+                  <h4 className="text-sm font-semibold text-zinc-900">Custom duration options</h4>
+                </div>
+                <span className="text-xs text-zinc-500">optional</span>
+              </div>
+              <p className="text-xs text-zinc-500 mb-3">
+                Add your own periods (e.g. 4 months, 6 months). Each row becomes a period the user can pick on the plan card.
+                The <strong>first row</strong> is the base price and replaces the Monthly Price/Duration above. Leave empty to keep a simple monthly plan.
+              </p>
+
+              {form.tiers.length > 0 && (
+                <div className="space-y-2 mb-2">
+                  <div className="hidden sm:grid grid-cols-[1fr_84px_96px_36px] gap-2 px-1">
+                    <span className="text-xs text-zinc-400">Label (shown on card)</span>
+                    <span className="text-xs text-zinc-400">Days</span>
+                    <span className="text-xs text-zinc-400">Price ₹</span>
+                    <span></span>
+                  </div>
+                  {form.tiers.map((t, i) => (
+                    <div key={t.id} className="grid grid-cols-[1fr_70px_84px_36px] sm:grid-cols-[1fr_84px_96px_36px] gap-2 items-start">
+                      <div>
+                        <input className={inputCls} value={t.label} onChange={(e) => updateTier(i, 'label', e.target.value)} placeholder={i === 0 ? '1 month' : 'e.g. 6 months'} />
+                        {i === 0 && <span className="block text-[10px] text-zinc-400 mt-0.5">base price</span>}
+                      </div>
+                      <input type="number" min="1" className={inputCls} value={t.days} onChange={(e) => updateTier(i, 'days', e.target.value)} placeholder="30" />
+                      <input type="number" min="1" className={inputCls} value={t.price} onChange={(e) => updateTier(i, 'price', e.target.value)} placeholder="499" />
+                      <button onClick={() => removeTier(i)} title="Remove" className="h-[38px] w-9 inline-flex items-center justify-center rounded-lg border border-zinc-200 text-red-500 hover:bg-red-50"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button onClick={addTier} className="inline-flex items-center gap-1.5 text-sm font-medium text-[#8b2df2] bg-white border border-[#8b2df2]/30 rounded-lg px-3 py-1.5 hover:bg-[#8b2df2]/5 transition">
+                <Plus className="w-4 h-4" /> Add duration
+              </button>
             </div>
             <div>
               <label className="block text-sm font-medium text-zinc-700 mb-1">Tagline <span className="text-zinc-400 font-normal">optional</span></label>
@@ -184,8 +257,9 @@ export default function PaymentSettings() {
                   {!p.active && <span className="text-xs bg-zinc-100 text-zinc-500 px-2 py-0.5 rounded-full">Inactive</span>}
                 </div>
                 <p className="text-sm text-zinc-500 mt-0.5">
-                  {formatRupees(p.price)}/{p.durationInDays}d
-                  {p.annualPrice != null && ` · ${formatRupees(p.annualPrice)}/year`}
+                  {p.tiers && p.tiers.length > 0
+                    ? p.tiers.map((t) => `${t.label} · ${formatRupees(t.price)}`).join('  |  ')
+                    : <>{formatRupees(p.price)}/{p.durationInDays}d{p.annualPrice != null && ` · ${formatRupees(p.annualPrice)}/year`}</>}
                 </p>
               </div>
               <div className="flex items-center gap-1 shrink-0">

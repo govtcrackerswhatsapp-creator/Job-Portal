@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { getPlans } from '../lib/plansData';
 import { grantAccess } from '../lib/subscription';
-import { SubscriptionPlan } from '../types';
+import { SubscriptionPlan, PlanTier } from '../types';
 import { formatRupees } from '../lib/format';
 import { Check, Loader2, ArrowLeft, Sparkles, Crown } from 'lucide-react';
 
@@ -28,6 +28,8 @@ export default function Subscription() {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [cycle, setCycle] = useState<'monthly' | 'annual'>('monthly');
+  // Per-plan chosen tier id (only used by plans that define tiers).
+  const [selectedTier, setSelectedTier] = useState<Record<string, string>>({});
   const [processing, setProcessing] = useState<string | null>(null);
   const [toast, setToast] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
 
@@ -37,7 +39,12 @@ export default function Subscription() {
     try {
       setLoading(true);
       const all = await getPlans(); // cached
-      setPlans(all.filter((p) => p.active).sort((a, b) => a.price - b.price));
+      const active = all.filter((p) => p.active).sort((a, b) => a.price - b.price);
+      setPlans(active);
+      // Default each tiered plan's selection to its first tier (the base).
+      const defaults: Record<string, string> = {};
+      active.forEach((pl) => { if (pl.tiers && pl.tiers.length > 0 && pl.id) defaults[pl.id] = pl.tiers[0].id; });
+      setSelectedTier(defaults);
     } catch (e) {
       console.error('Error loading plans:', e);
     } finally {
@@ -51,11 +58,38 @@ export default function Subscription() {
   };
 
   const anyAnnual = plans.some((p) => p.annualPrice != null);
-  const priceFor = (p: SubscriptionPlan) => (cycle === 'annual' && p.annualPrice != null ? p.annualPrice : p.price);
-  const periodFor = (p: SubscriptionPlan) => (cycle === 'annual' && p.annualPrice != null ? 'year' : `${p.durationInDays} days`);
+
+  // The tier the user has selected for a plan (undefined if the plan has no tiers).
+  const chosenTier = (p: SubscriptionPlan): PlanTier | undefined => {
+    if (!p.tiers || p.tiers.length === 0 || !p.id) return undefined;
+    return p.tiers.find((t) => t.id === selectedTier[p.id!]) || p.tiers[0];
+  };
+
+  // Price/period shown on the card. Tiered plans use the chosen tier; others keep
+  // the original monthly/annual behaviour.
+  const priceFor = (p: SubscriptionPlan) => {
+    const t = chosenTier(p);
+    if (t) return t.price;
+    return cycle === 'annual' && p.annualPrice != null ? p.annualPrice : p.price;
+  };
+  const periodFor = (p: SubscriptionPlan) => {
+    const t = chosenTier(p);
+    if (t) return t.label;
+    return cycle === 'annual' && p.annualPrice != null ? 'year' : `${p.durationInDays} days`;
+  };
+
+  // Small helper: per-month figure + saving vs the first tier, for the hint line.
+  const tierSaving = (p: SubscriptionPlan, t: PlanTier): string => {
+    const base = p.tiers && p.tiers[0];
+    const perMonth = t.price / (t.days / 30);
+    if (!base || base.id === t.id) return `${t.days} days of access`;
+    const pct = Math.round((1 - (t.price / t.days) / (base.price / base.days)) * 100);
+    return pct > 0 ? `${formatRupees(Math.round(perMonth))}/mo · save ${pct}%` : `${formatRupees(Math.round(perMonth))}/mo`;
+  };
 
   const handleSubscribe = async (plan: SubscriptionPlan) => {
     if (!user) return;
+    const tier = chosenTier(plan); // undefined for non-tier plans
     try {
       setProcessing(plan.id || '');
 
@@ -65,7 +99,7 @@ export default function Subscription() {
       const orderResp = await fetch('/api/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId: plan.id, billingCycle: cycle }),
+        body: JSON.stringify({ planId: plan.id, billingCycle: cycle, tierId: tier?.id }),
       });
       const order = await orderResp.json();
       if (!orderResp.ok || !order.id) { showToast('err', order.error || 'Could not start payment.'); return; }
@@ -77,7 +111,7 @@ export default function Subscription() {
         amount: order.amount,
         currency: 'INR',
         name: 'TecKosh',
-        description: `${plan.name} — ${cycle === 'annual' ? 'Annual' : 'Monthly'}`,
+        description: tier ? `${plan.name} — ${tier.label}` : `${plan.name} — ${cycle === 'annual' ? 'Annual' : 'Monthly'}`,
         order_id: order.id,
         prefill: { email: user.email, name: user.name || '' },
         theme: { color: '#8b2df2' },
@@ -96,6 +130,8 @@ export default function Subscription() {
               paymentId: response.razorpay_payment_id,
               amount: order.verifiedAmount ?? priceFor(plan),
               contact: verify.contact,
+              verifiedDays: order.verifiedDays,
+              planLabel: tier ? `${plan.name} — ${tier.label}` : undefined,
             });
 
             showToast('ok', 'Payment successful! Access unlocked. Redirecting…');
@@ -129,7 +165,7 @@ export default function Subscription() {
           <p className="text-zinc-500 mt-2">Get exam details, study material, and more for every listing.</p>
         </div>
 
-        {anyAnnual && (
+        {anyAnnual && !plans.every((p) => p.tiers && p.tiers.length > 0) && (
           <div className="flex justify-center mb-8">
             <div className="inline-flex bg-white rounded-full p-1 shadow-soft">
               <button onClick={() => setCycle('monthly')} className={`px-5 py-2 rounded-full text-sm font-medium transition ${cycle === 'monthly' ? 'bg-[#8b2df2] text-white' : 'text-zinc-600'}`}>Monthly</button>
@@ -160,9 +196,29 @@ export default function Subscription() {
                     <h3 className="font-heading text-lg font-bold text-zinc-900">{plan.name}</h3>
                   </div>
                   {plan.details && <p className="text-sm text-zinc-500 mb-4">{plan.details}</p>}
+
+                  {/* Period chips — only for plans that define custom tiers. */}
+                  {plan.tiers && plan.tiers.length > 1 && plan.id && (
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {plan.tiers.map((t) => {
+                        const on = (selectedTier[plan.id!] || plan.tiers![0].id) === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            onClick={() => setSelectedTier((prev) => ({ ...prev, [plan.id!]: t.id }))}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${on ? 'bg-[#8b2df2] text-white border-[#8b2df2]' : 'bg-white text-zinc-600 border-zinc-200 hover:border-[#8b2df2]/40'}`}
+                          >
+                            {t.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   <div className="mb-5">
                     <span className="font-heading text-3xl font-bold text-zinc-900">{formatRupees(priceFor(plan))}</span>
                     <span className="text-sm text-zinc-400"> / {periodFor(plan)}</span>
+                    {(() => { const t = chosenTier(plan); return t ? <p className="text-xs text-emerald-600 mt-1">{tierSaving(plan, t)}</p> : null; })()}
                   </div>
                   <ul className="space-y-2.5 mb-6 flex-1">
                     {plan.features.map((f, i) => (

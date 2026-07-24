@@ -57,6 +57,19 @@ export interface Job {
   createdBy: string;
 }
 
+/**
+ * One selectable billing period on a plan (e.g. "6 months / 180 days / ₹2499").
+ * `id` is a stable random slug so reordering or renaming tiers never changes which
+ * one a price resolves to. Tiers are OPTIONAL and purely additive: a plan with no
+ * `tiers` behaves exactly as before (monthly + optional annual).
+ */
+export interface PlanTier {
+  id: string;
+  label: string;
+  days: number;
+  price: number;
+}
+
 export interface SubscriptionPlan {
   id?: string;
   name: string;
@@ -68,6 +81,13 @@ export interface SubscriptionPlan {
   details?: string;
   badge?: string;
   icon?: string;
+  /**
+   * Custom billing periods. When present, the plan card shows these as period
+   * chips and the server prices each order by the chosen tier's `id`. The FIRST
+   * tier mirrors `price`/`durationInDays` so the landing page and the existing
+   * (non-tier) payment path keep working with no migration.
+   */
+  tiers?: PlanTier[];
 }
 
 export interface PaymentRecord {

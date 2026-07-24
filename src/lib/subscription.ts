@@ -15,18 +15,26 @@ export async function grantAccess(
   user: UserProfile,
   plan: SubscriptionPlan,
   billingCycle: 'monthly' | 'annual',
-  payment: { orderId: string; paymentId: string; amount: number; contact?: string | null },
+  payment: { orderId: string; paymentId: string; amount: number; contact?: string | null; verifiedDays?: number; planLabel?: string },
 ): Promise<number> {
   const now = Date.now();
-  // IMPORTANT: this condition must stay identical to the one in api/create-order.ts,
-  // which decides what the user is actually charged:
+  // PREFER the duration the server priced (create-order returns verifiedDays alongside
+  // verifiedAmount). Price and duration are then decided ONCE, on the server, so the
+  // granted period can never drift from what the user was charged — including for tiers.
+  //
+  // Fallback (verifiedDays absent): the original monthly/annual logic. This condition
+  // must stay identical to the non-tier branch in api/create-order.ts:
   //     const isAnnual = billingCycle === 'annual' && plan.annualPrice != null;
-  // If the two ever disagree, the user is charged for one period and granted
-  // another. A plan with no annual price is always billed — and so must always
-  // be granted — at its monthly duration, even when the Yearly toggle is on.
+  // A plan with no annual price is always billed — and so must always be granted —
+  // at its monthly duration, even when the Yearly toggle is on.
   const isAnnual = billingCycle === 'annual' && plan.annualPrice != null;
-  const days = isAnnual ? 365 : plan.durationInDays;
+  const days = (payment.verifiedDays != null && payment.verifiedDays >= 1)
+    ? payment.verifiedDays
+    : (isAnnual ? 365 : plan.durationInDays);
   const durationMs = days * 24 * 60 * 60 * 1000;
+
+  // Label written to the user/record: the specific tier label if provided, else the plan name.
+  const label = payment.planLabel && payment.planLabel.trim() ? payment.planLabel.trim() : plan.name;
 
   // Extend from remaining time if the subscription is still active (don't lose paid days).
   const currentExpiry = user.subscriptionExpiry && user.subscriptionExpiry > now ? user.subscriptionExpiry : now;
@@ -37,7 +45,7 @@ export async function grantAccess(
     subscriptionStatus: 'active',
     subscriptionExpiry: newExpiry,
     subscriptionStart: now,
-    planName: plan.name,
+    planName: label,
     contact: payment.contact || user.contact || null,
   });
 
@@ -46,7 +54,7 @@ export async function grantAccess(
     userId: user.uid,
     email: user.email,
     planId: plan.id || '',
-    planName: plan.name,
+    planName: label,
     amount: payment.amount,
     razorpayOrderId: payment.orderId,
     razorpayPaymentId: payment.paymentId,
