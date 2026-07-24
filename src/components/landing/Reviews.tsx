@@ -13,7 +13,7 @@ export default function Reviews({ settings }: { settings: LandingSettings }) {
           <h2 className="font-heading text-3xl md:text-4xl font-bold text-zinc-900 mt-1">{settings.reviewsTitle}</h2>
         </div>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {reviews.map((r, i) => {
             const stars = Math.max(1, Math.min(5, r.stars || 5));
             return (

@@ -34,7 +34,7 @@ export default function PlansPreview({ onSignIn }: { onSignIn: () => void }) {
           <h2 className="font-heading text-3xl md:text-4xl font-bold text-zinc-900 mt-1">Simple, transparent plans</h2>
           <p className="text-zinc-500 mt-2">Unlock full details for every job. Cancel anytime.</p>
         </div>
-        <div className="grid md:grid-cols-3 gap-5 max-w-4xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-4xl mx-auto">
           {plans.map((plan) => {
             const featured = !!plan.badge;
             return (

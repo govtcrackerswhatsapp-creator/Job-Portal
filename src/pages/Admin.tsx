@@ -26,7 +26,7 @@ export default function Admin() {
   ];
 
   return (
-    <div className="p-6 md:p-8 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-6 md:p-8 max-w-5xl mx-auto">
       <div className="mb-6">
         <p className="text-xs font-semibold uppercase tracking-wider text-[#8b2df2]">Administration</p>
         <h1 className="font-heading text-3xl font-bold text-zinc-900">Admin Panel</h1>
@@ -37,16 +37,16 @@ export default function Admin() {
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
+            className={`inline-flex items-center gap-1.5 sm:gap-2 shrink-0 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition ${
               tab === t.id ? 'bg-[#8b2df2] text-white' : 'text-zinc-600 hover:bg-zinc-100'
             }`}
           >
-            <t.icon className="w-4 h-4" /> {t.label}
+            <t.icon className="w-4 h-4 shrink-0" /> {t.label}
           </button>
         ))}
       </div>
 
-      <div className="bg-white rounded-2xl shadow-soft p-6">
+      <div className="bg-white rounded-2xl shadow-soft p-4 sm:p-6">
         {tab === 'subscribers' && <SubscribersManagement />}
         {tab === 'managers' && <ManagerManagement />}
         {tab === 'plans' && <PaymentSettings />}

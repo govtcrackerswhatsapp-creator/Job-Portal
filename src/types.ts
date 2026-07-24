@@ -8,6 +8,8 @@ export interface UserProfile {
   uid: string;
   email: string;
   role: Role;
+  /** Signup timestamp (ms). Absent on accounts created before this was tracked. */
+  createdAt?: number;
   name?: string | null;
   photoURL?: string | null;
   subscriptionStatus?: 'active' | 'inactive';

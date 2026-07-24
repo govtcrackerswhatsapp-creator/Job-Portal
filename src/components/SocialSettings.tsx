@@ -113,7 +113,7 @@ export default function SocialSettings() {
         <p className="text-sm text-zinc-500">Platforms shown in the Community section of the landing page.</p>
       </div>
 
-      <div className="bg-zinc-50 rounded-xl p-5 border border-zinc-100 mb-4">
+      <div className="bg-zinc-50 rounded-xl p-4 sm:p-5 border border-zinc-100 mb-4">
         <h3 className="font-medium text-zinc-900 mb-3">Section Text</h3>
         <div className="space-y-3">
           <div>
@@ -137,7 +137,7 @@ export default function SocialSettings() {
       </div>
 
       {showForm ? (
-        <div className="bg-zinc-50 rounded-xl p-5 border border-zinc-100 mb-4">
+        <div className="bg-zinc-50 rounded-xl p-4 sm:p-5 border border-zinc-100 mb-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-medium text-zinc-900 inline-flex items-center gap-2"><Sparkles className="w-4 h-4 text-[#8b2df2]" /> {editingId ? 'Edit Social Link' : 'Add New Social Link'}</h3>
             <button onClick={() => setShowForm(false)} className="p-1 text-zinc-400 hover:text-zinc-700"><X className="w-4 h-4" /></button>
@@ -146,14 +146,14 @@ export default function SocialSettings() {
           <div className="flex flex-wrap gap-2 mb-4">
             {SOCIAL_PRESETS.map((p) => { const Icon = socialIconFor(p.icon); return <button key={p.platform} onClick={() => applyPreset(p)} className="inline-flex items-center gap-1.5 text-xs font-medium bg-white border border-zinc-200 hover:border-[#8b2df2] rounded-lg px-3 py-1.5 transition"><Icon className="w-3.5 h-3.5" style={{ color: p.color }} /> {p.platform}</button>; })}
           </div>
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="block text-sm font-medium text-zinc-700 mb-1">Platform Name *</label><input className={inputCls} value={form.platform} onChange={(e) => set('platform', e.target.value)} placeholder="e.g. Instagram" /></div>
             <div><label className="block text-sm font-medium text-zinc-700 mb-1">Icon Style *</label><select className={inputCls} value={form.icon} onChange={(e) => set('icon', e.target.value)}>{ICON_STYLE_OPTIONS.map((ic) => <option key={ic} value={ic}>{ic}</option>)}</select></div>
           </div>
           <div className="mt-3"><label className="block text-sm font-medium text-zinc-700 mb-1">Link URL *</label><input className={inputCls} value={form.url} onChange={(e) => set('url', e.target.value)} placeholder="https://youtube.com/@channel" /></div>
-          <div className="grid sm:grid-cols-2 gap-3 mt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
             <div><label className="block text-sm font-medium text-zinc-700 mb-1">Display Label / Handle <span className="text-zinc-400 font-normal">optional</span></label><input className={inputCls} value={form.handle} onChange={(e) => set('handle', e.target.value)} placeholder="e.g. @mychannel" /></div>
-            <div><label className="block text-sm font-medium text-zinc-700 mb-1">Brand Color</label><div className="flex items-center gap-2"><input type="color" value={form.color} onChange={(e) => set('color', e.target.value)} className="w-10 h-10 rounded-lg border border-zinc-200 bg-white cursor-pointer p-0.5" /><input className={inputCls + ' flex-1'} value={form.color} onChange={(e) => set('color', e.target.value)} placeholder="#E1306C" /></div></div>
+            <div><label className="block text-sm font-medium text-zinc-700 mb-1">Brand Color</label><div className="flex items-center gap-2"><input type="color" value={form.color} onChange={(e) => set('color', e.target.value)} className="w-10 h-10 shrink-0 rounded-lg border border-zinc-200 bg-white cursor-pointer p-0.5" /><input className={inputCls + ' flex-1 min-w-0'} value={form.color} onChange={(e) => set('color', e.target.value)} placeholder="#E1306C" /></div></div>
           </div>
           <div className="mt-3"><label className="block text-sm font-medium text-zinc-700 mb-1">Description / Tagline <span className="text-zinc-400 font-normal">optional</span></label><input className={inputCls} value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Shown in the community section" /></div>
           <label className="flex items-center gap-2 text-sm text-zinc-700 mt-3"><input type="checkbox" checked={form.enabled} onChange={(e) => set('enabled', e.target.checked)} className="rounded" /> Show on public landing page</label>

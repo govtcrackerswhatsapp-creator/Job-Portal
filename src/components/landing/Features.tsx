@@ -15,7 +15,7 @@ export default function Features({ settings }: { settings: LandingSettings }) {
         <p className="text-xs font-semibold uppercase tracking-wider text-[#8b2df2]">Why {settings.brandNameStart}{settings.brandNameEnd}</p>
         <h2 className="font-heading text-3xl md:text-4xl font-bold text-zinc-900 mt-1">{settings.featuresTitle}</h2>
       </div>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {settings.features.map((f, i) => {
           const Icon = ICON_MAP[f.icon] || Bell;
           const color = COLORS[i % COLORS.length];

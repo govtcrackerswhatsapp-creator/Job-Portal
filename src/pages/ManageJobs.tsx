@@ -50,10 +50,14 @@ function inputToTimestamp(value: string): number | null {
   return isNaN(ms) ? null : ms;
 }
 
-const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const THIRTY_DAYS = 30 * DAY_MS;
 function isExpired(job: Job): boolean {
   const now = Date.now();
-  if (job.applicationEndDate) return job.applicationEndDate < now;
+  // The last date to apply is INCLUSIVE. applicationEndDate is stored at 00:00
+  // on that day, so a job stays active for the whole of it and only expires
+  // once the day has fully passed.
+  if (job.applicationEndDate) return job.applicationEndDate + DAY_MS <= now;
   return job.createdAt < now - THIRTY_DAYS;
 }
 
@@ -76,6 +80,7 @@ export default function ManageJobs() {
   const [form, setForm] = useState<JobFormState>({ ...EMPTY_JOB });
   const [view, setView] = useState<'active' | 'expired'>('active');
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // The rich-text editors are uncontrolled (that is what stops the caret jumping).
   // Bumping these counters changes their React `key`, forcing a clean remount with
@@ -100,6 +105,45 @@ export default function ManageJobs() {
   const activeJobs = useMemo(() => jobs.filter((j) => !isExpired(j)), [jobs]);
   const expiredJobs = useMemo(() => jobs.filter((j) => isExpired(j)), [jobs]);
   const shownJobs = view === 'active' ? activeJobs : expiredJobs;
+
+  // Managers may only delete jobs they created (enforced by Firestore rules too),
+  // so anything they cannot delete is not offered for selection.
+  const canDelete = (job: Job) => user?.role === 'superadmin' || job.createdBy === user?.uid;
+  const deletableExpired = expiredJobs.filter((j) => j.id && canDelete(j));
+  const allSelected = deletableExpired.length > 0 && deletableExpired.every((j) => selectedIds.includes(j.id!));
+
+  const toggleSelect = (id?: string) => {
+    if (!id) return;
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? [] : deletableExpired.map((j) => j.id!));
+  };
+  const switchView = (v: 'active' | 'expired') => { setView(v); setSelectedIds([]); };
+
+  /** Delete a list of job ids, continuing past individual failures. */
+  const deleteMany = async (ids: string[], label: string) => {
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} ${label}? This cannot be undone.`)) return;
+    try {
+      setBulkDeleting(true);
+      let failed = 0;
+      for (const id of ids) {
+        try {
+          await deleteDoc(doc(db, 'jobs', id));
+        } catch (e) {
+          failed++;
+          console.error(`Could not delete job ${id}:`, e);
+        }
+      }
+      clearJobsCache();
+      setSelectedIds([]);
+      await fetchJobs();
+      if (failed > 0) alert(`${ids.length - failed} deleted. ${failed} could not be deleted — you can only delete jobs you created.`);
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   const openCreate = () => {
     setForm({ ...EMPTY_JOB });
@@ -223,26 +267,11 @@ export default function ManageJobs() {
     }
   };
 
-  const handleBulkDeleteExpired = async () => {
-    if (expiredJobs.length === 0) return;
-    if (!confirm(`Delete ALL ${expiredJobs.length} expired jobs? This cannot be undone.`)) return;
-    try {
-      setBulkDeleting(true);
-      for (const job of expiredJobs) {
-        if (job.id) await deleteDoc(doc(db, 'jobs', job.id));
-      }
-      clearJobsCache();
-      await fetchJobs();
-    } catch (e) {
-      console.error('Error bulk deleting:', e);
-      alert('Some jobs could not be deleted.');
-    } finally {
-      setBulkDeleting(false);
-    }
-  };
+  const handleDeleteSelected = () => deleteMany(selectedIds, 'selected job(s)');
+  const handleBulkDeleteExpired = () => deleteMany(deletableExpired.map((j) => j.id!), 'expired job(s)');
 
   return (
-    <div className="p-6 md:p-8 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-6 md:p-8 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-[#8b2df2]">Content</p>
@@ -256,7 +285,7 @@ export default function ManageJobs() {
       </div>
 
       {showForm ? (
-        <div className="bg-white rounded-2xl shadow-soft p-6">
+        <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
           <div className="flex items-center justify-between mb-5">
             <h2 className="font-heading text-lg font-semibold text-zinc-900">{editingId ? 'Edit Job' : 'Create New Job'}</h2>
             <button onClick={() => setShowForm(false)} className="p-1.5 text-zinc-400 hover:text-zinc-700"><X className="w-5 h-5" /></button>
@@ -295,7 +324,7 @@ export default function ManageJobs() {
 
             <div className="pt-2 border-t border-zinc-100">
               <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-3">Card details (shown on the job card — all optional)</p>
-              <div className="grid sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Company / Organisation name">
                   <input className={inputCls} value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} placeholder="e.g. Google, SSC" />
                 </Field>
@@ -327,7 +356,7 @@ export default function ManageJobs() {
               </div>
             </div>
 
-            <div className="grid sm:grid-cols-3 gap-4 pt-2 border-t border-zinc-100">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2 border-t border-zinc-100">
               <Field label="Notification Date">
                 <input type="date" className={inputCls} value={dateToInput(form.notificationDate)} onChange={(e) => setForm({ ...form, notificationDate: inputToTimestamp(e.target.value) })} />
               </Field>
@@ -382,7 +411,7 @@ export default function ManageJobs() {
                 {form.customSections.map((section, i) => (
                   <div key={`${sectionsKey}-${i}`} className="bg-zinc-50 rounded-xl p-3 border border-zinc-100">
                     <div className="flex items-center gap-2 mb-2">
-                      <input className={inputCls + ' flex-1'} value={section.title} onChange={(e) => updateSection(i, 'title', e.target.value)} placeholder="Section title" />
+                      <input className={inputCls + ' flex-1 min-w-0'} value={section.title} onChange={(e) => updateSection(i, 'title', e.target.value)} placeholder="Section title" />
                       <button onClick={() => removeSection(i)} className="p-2 text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
                     </div>
                     <RichTextEditor
@@ -410,16 +439,16 @@ export default function ManageJobs() {
                 {form.linkButtons.map((btn, i) => (
                   <div key={i} className="bg-zinc-50 rounded-xl p-3 border border-zinc-100 space-y-2">
                     <div className="flex items-center gap-2">
-                      <input className={inputCls + ' flex-1'} value={btn.text} onChange={(e) => updateButton(i, 'text', e.target.value)} placeholder="Button text (e.g. Official Notification)" />
+                      <input className={inputCls + ' flex-1 min-w-0'} value={btn.text} onChange={(e) => updateButton(i, 'text', e.target.value)} placeholder="Button text (e.g. Official Notification)" />
                       <button onClick={() => moveButton(i, -1)} disabled={i === 0} className="p-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30"><ArrowUp className="w-4 h-4" /></button>
                       <button onClick={() => moveButton(i, 1)} disabled={i === form.linkButtons.length - 1} className="p-1.5 text-zinc-400 hover:text-zinc-700 disabled:opacity-30"><ArrowDown className="w-4 h-4" /></button>
                       <button onClick={() => removeButton(i)} className="p-1.5 text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
                     </div>
                     <div className="flex items-center gap-2">
                       <LinkIcon className="w-4 h-4 text-zinc-400 shrink-0" />
-                      <input className={inputCls + ' flex-1'} value={btn.url} onChange={(e) => updateButton(i, 'url', e.target.value)} placeholder="https://... (link to open)" />
+                      <input className={inputCls + ' flex-1 min-w-0'} value={btn.url} onChange={(e) => updateButton(i, 'url', e.target.value)} placeholder="https://... (link to open)" />
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs text-zinc-500 mb-1">Button color</label>
                         <div className="flex items-center gap-2">
@@ -460,17 +489,28 @@ export default function ManageJobs() {
         <>
           <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
             <div className="inline-flex bg-white rounded-xl p-1 shadow-soft">
-              <button onClick={() => setView('active')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'active' ? 'bg-[#8b2df2] text-white' : 'text-zinc-600 hover:bg-zinc-100'}`}>
+              <button onClick={() => switchView('active')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'active' ? 'bg-[#8b2df2] text-white' : 'text-zinc-600 hover:bg-zinc-100'}`}>
                 Active ({activeJobs.length})
               </button>
-              <button onClick={() => setView('expired')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'expired' ? 'bg-[#8b2df2] text-white' : 'text-zinc-600 hover:bg-zinc-100'}`}>
+              <button onClick={() => switchView('expired')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'expired' ? 'bg-[#8b2df2] text-white' : 'text-zinc-600 hover:bg-zinc-100'}`}>
                 Expired ({expiredJobs.length})
               </button>
             </div>
-            {view === 'expired' && expiredJobs.length > 0 && (
-              <button onClick={handleBulkDeleteExpired} disabled={bulkDeleting} className="inline-flex items-center gap-2 bg-red-600 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-red-700 transition disabled:opacity-50">
-                {bulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Delete All Expired
-              </button>
+            {view === 'expired' && deletableExpired.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="inline-flex items-center gap-2 text-sm text-zinc-600 bg-white rounded-xl px-3 py-2 shadow-soft cursor-pointer">
+                  <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} className="rounded" />
+                  Select all ({deletableExpired.length})
+                </label>
+                {selectedIds.length > 0 && (
+                  <button onClick={handleDeleteSelected} disabled={bulkDeleting} className="inline-flex items-center gap-2 bg-red-600 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-red-700 transition disabled:opacity-50">
+                    {bulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Delete Selected ({selectedIds.length})
+                  </button>
+                )}
+                <button onClick={handleBulkDeleteExpired} disabled={bulkDeleting} className="inline-flex items-center gap-2 border-2 border-red-200 text-red-600 rounded-xl px-4 py-2 text-sm font-semibold hover:bg-red-50 transition disabled:opacity-50">
+                  Delete All Expired
+                </button>
+              </div>
             )}
           </div>
 
@@ -491,9 +531,18 @@ export default function ManageJobs() {
           ) : (
             <div className="space-y-3">
               {shownJobs.map((job) => (
-                <div key={job.id} className="bg-white rounded-2xl shadow-soft p-5 flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                <div key={job.id} className={`bg-white rounded-2xl shadow-soft p-4 sm:p-5 flex items-start justify-between gap-4 ${job.id && selectedIds.includes(job.id) ? 'ring-2 ring-red-300' : ''}`}>
+                  {view === 'expired' && canDelete(job) && (
+                    <input
+                      type="checkbox"
+                      checked={!!job.id && selectedIds.includes(job.id)}
+                      onChange={() => toggleSelect(job.id)}
+                      className="mt-1 rounded shrink-0"
+                      aria-label={`Select ${job.title}`}
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${categoryBadgeClass(job.category)}`}>{categoryLabel(job.category)}</span>
                       <span className="text-xs text-zinc-400">Ends: {formatDate(job.applicationEndDate) || '—'}</span>
                     </div>
@@ -501,8 +550,8 @@ export default function ManageJobs() {
                     <p className="text-xs text-zinc-400 mt-1">Added {formatDate(job.createdAt)}</p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    {view === 'active' && <button onClick={() => openEdit(job)} className="p-2 text-zinc-400 hover:text-[#8b2df2]"><Pencil className="w-4 h-4" /></button>}
-                    <button onClick={() => handleDelete(job.id)} className="p-2 text-zinc-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                    {view === 'active' && canDelete(job) && <button onClick={() => openEdit(job)} className="p-2 text-zinc-400 hover:text-[#8b2df2]"><Pencil className="w-4 h-4" /></button>}
+                    {canDelete(job) && <button onClick={() => handleDelete(job.id)} className="p-2 text-zinc-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>}
                   </div>
                 </div>
               ))}

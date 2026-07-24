@@ -71,15 +71,15 @@ export default function Dashboard() {
   }, [jobs, filter, search]);
 
   return (
-    <div className="p-6 md:p-8 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto">
       <div className="mb-6">
         <p className="text-xs font-semibold uppercase tracking-wider text-[#8b2df2]">Opportunities</p>
         <h1 className="font-heading text-3xl font-bold text-zinc-900">Latest Jobs</h1>
         <p className="text-zinc-500 mt-1">Browse the newest notifications. Tap a job for full details.</p>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        <div className="relative flex-1">
+      <div className="flex flex-col lg:flex-row gap-3 mb-6">
+        <div className="relative flex-1 min-w-0">
           <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             value={search}
@@ -88,18 +88,24 @@ export default function Dashboard() {
             className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30 focus:border-[#8b2df2] bg-white"
           />
         </div>
-        <div className="flex gap-2 overflow-x-auto">
-          {CATEGORIES.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setFilter(cat)}
-              className={`px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition ${
-                filter === cat ? 'bg-[#8b2df2] text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:border-[#8b2df2]/40'
-              }`}
-            >
-              {cat === 'all' ? 'All' : categoryLabel(cat)}
-            </button>
-          ))}
+        {/* Category chips. On mobile this is one swipeable row that runs edge to
+            edge with no visible scrollbar, and a soft fade on the right hinting
+            there is more to scroll. From lg: up it sits inline next to the search. */}
+        <div className="relative min-w-0 -mx-4 sm:mx-0">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 sm:px-0">
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setFilter(cat)}
+                className={`shrink-0 px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition ${
+                  filter === cat ? 'bg-[#8b2df2] text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:border-[#8b2df2]/40'
+                }`}
+              >
+                {cat === 'all' ? 'All' : categoryLabel(cat)}
+              </button>
+            ))}
+          </div>
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[#f5f5f7] to-transparent" />
         </div>
       </div>
 
@@ -111,7 +117,7 @@ export default function Dashboard() {
           <p className="text-zinc-500">{jobs.length === 0 ? 'No jobs posted yet. Check back soon!' : 'No jobs match your filters.'}</p>
         </div>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
           {visibleJobs.map((job, i) => (
             <JobCard
               key={job.id}

@@ -117,7 +117,7 @@ export default function Subscription() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f5f5f7] p-6 md:p-10">
+    <div className="min-h-screen bg-[#f5f5f7] p-4 sm:p-6 md:p-10">
       <div className="max-w-5xl mx-auto">
         <button onClick={() => navigate(-1)} className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-500 hover:text-zinc-800 mb-6">
           <ArrowLeft className="w-4 h-4" /> Back
@@ -145,7 +145,7 @@ export default function Subscription() {
             <p className="text-zinc-500">No plans available right now. Please check back soon.</p>
           </div>
         ) : (
-          <div className="grid md:grid-cols-3 gap-5 max-w-4xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-4xl mx-auto">
             {plans.map((plan) => {
               const featured = !!plan.badge;
               return (
@@ -189,7 +189,7 @@ export default function Subscription() {
       </div>
 
       {toast && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 rounded-xl shadow-lg text-sm font-medium z-50 ${toast.type === 'ok' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-md text-center px-5 py-3 rounded-xl shadow-lg text-sm font-medium z-50 ${toast.type === 'ok' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
           {toast.msg}
         </div>
       )}

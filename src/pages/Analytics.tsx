@@ -125,7 +125,7 @@ export default function Analytics() {
   };
 
   return (
-    <div className="p-6 md:p-8 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-[#8b2df2]">Insights</p>
@@ -137,23 +137,23 @@ export default function Analytics() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-2xl shadow-soft p-5 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-xl bg-[#8b2df2]/10 flex items-center justify-center"><IndianRupee className="w-5 h-5 text-[#8b2df2]" /></div>
+          <div className="w-11 h-11 rounded-xl bg-[#8b2df2]/10 flex items-center justify-center shrink-0"><IndianRupee className="w-5 h-5 text-[#8b2df2]" /></div>
           <div>
             <p className="text-xs text-zinc-400">Total Revenue (filtered)</p>
             <p className="font-heading text-2xl font-bold text-zinc-900">{formatRupees(stats.revenue)}</p>
           </div>
         </div>
         <div className="bg-white rounded-2xl shadow-soft p-5 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center"><CheckCircle2 className="w-5 h-5 text-emerald-600" /></div>
+          <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0"><CheckCircle2 className="w-5 h-5 text-emerald-600" /></div>
           <div>
             <p className="text-xs text-zinc-400">Successful Payments</p>
             <p className="font-heading text-2xl font-bold text-zinc-900">{stats.successCount}</p>
           </div>
         </div>
         <div className="bg-white rounded-2xl shadow-soft p-5 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center"><Receipt className="w-5 h-5 text-blue-600" /></div>
+          <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center shrink-0"><Receipt className="w-5 h-5 text-blue-600" /></div>
           <div>
             <p className="text-xs text-zinc-400">Total Records</p>
             <p className="font-heading text-2xl font-bold text-zinc-900">{stats.total}</p>
@@ -230,7 +230,7 @@ export default function Analytics() {
             </div>
 
             {/* Pagination */}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-zinc-100">
+            <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-t border-zinc-100">
               <p className="text-xs text-zinc-400">
                 Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
               </p>

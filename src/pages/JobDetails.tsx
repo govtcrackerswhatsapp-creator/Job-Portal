@@ -90,7 +90,7 @@ export default function JobDetails() {
 
   if (notFound || !job) {
     return (
-      <div className="p-6 md:p-8 max-w-3xl mx-auto text-center py-20">
+      <div className="p-4 sm:p-6 md:p-8 max-w-3xl mx-auto text-center py-20">
         <p className="text-zinc-500 mb-4">This job could not be found.</p>
         <Link to="/dashboard" className="text-[#8b2df2] font-medium hover:underline">← Back to jobs</Link>
       </div>
@@ -105,13 +105,13 @@ export default function JobDetails() {
   const hasSummary = !!(job.experience || job.salary || job.location || wm || job.applicationEndDate) || !isEmptyHtml(job.ageLimit);
 
   return (
-    <div className="p-6 md:p-8 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto">
       <button onClick={() => navigate(-1)} className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-500 hover:text-zinc-800 mb-5">
         <ArrowLeft className="w-4 h-4" /> Back to Jobs
       </button>
 
       {/* Header card */}
-      <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
+      <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6 mb-4">
         <div className="flex items-start gap-4 flex-wrap">
           <div className="w-20 h-20 rounded-2xl bg-zinc-50 border border-zinc-100 flex items-center justify-center shrink-0 overflow-hidden">
             {job.companyLogo?.trim() ? (
@@ -128,29 +128,29 @@ export default function JobDetails() {
             {company && (
               <div className="flex items-center gap-1 mt-1">
                 <span className="text-base text-zinc-600">{company}</span>
-                <BadgeCheck className="w-4 h-4 text-blue-500" />
+                <BadgeCheck className="w-4 h-4 text-blue-500 shrink-0" />
               </div>
             )}
             {/* Info row */}
             {(job.location?.trim() || job.experience?.trim() || job.salary?.trim() || wm) && (
               <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-sm text-zinc-500 mt-3">
-                {job.location?.trim() && <span className="inline-flex items-center gap-1"><MapPin className="w-4 h-4" /> {job.location}</span>}
-                {job.experience?.trim() && <span className="inline-flex items-center gap-1"><Briefcase className="w-4 h-4" /> {job.experience}</span>}
-                {job.salary?.trim() && <span className="inline-flex items-center gap-1 font-semibold text-zinc-900"><IndianRupee className="w-4 h-4" /> {job.salary}</span>}
-                {wm && <span className="inline-flex items-center gap-1"><Building2 className="w-4 h-4" /> {wm}</span>}
+                {job.location?.trim() && <span className="inline-flex items-center gap-1 min-w-0"><MapPin className="w-4 h-4 shrink-0" /> {job.location}</span>}
+                {job.experience?.trim() && <span className="inline-flex items-center gap-1 min-w-0"><Briefcase className="w-4 h-4 shrink-0" /> {job.experience}</span>}
+                {job.salary?.trim() && <span className="inline-flex items-center gap-1 min-w-0 font-semibold text-zinc-900"><IndianRupee className="w-4 h-4 shrink-0" /> {job.salary}</span>}
+                {wm && <span className="inline-flex items-center gap-1 min-w-0"><Building2 className="w-4 h-4 shrink-0" /> {wm}</span>}
               </div>
             )}
           </div>
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Main column */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="xl:col-span-2 space-y-4">
           {/* Key info */}
-          <div className="bg-white rounded-2xl shadow-soft p-6">
+          <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
             <h2 className="font-heading text-base font-semibold text-zinc-900 mb-4">Key Information</h2>
-            <div className="grid sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <SummaryItem icon={Calendar} label="Notification Date" value={formatDate(job.notificationDate)} />
               <SummaryItem icon={Calendar} label="Application Start" value={formatDate(job.applicationStartDate)} />
               <SummaryItem icon={Calendar} label="Last Date to Apply" value={formatDate(job.applicationEndDate)} />
@@ -164,7 +164,7 @@ export default function JobDetails() {
           </div>
 
           {!isEmptyHtml(job.examDetails) && (
-            <div className="bg-white rounded-2xl shadow-soft p-6">
+            <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-3">
                 <FileText className="w-5 h-5 text-[#8b2df2]" />
                 <h2 className="font-heading text-base font-semibold text-zinc-900">Exam Details</h2>
@@ -174,7 +174,7 @@ export default function JobDetails() {
           )}
 
           {!isEmptyHtml(job.studyMaterial) && (
-            <div className="bg-white rounded-2xl shadow-soft p-6">
+            <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-3">
                 <BookOpen className="w-5 h-5 text-[#8b2df2]" />
                 <h2 className="font-heading text-base font-semibold text-zinc-900">Study Material</h2>
@@ -184,7 +184,7 @@ export default function JobDetails() {
           )}
 
           {customSections.map((section, i) => (
-            <div key={i} className="bg-white rounded-2xl shadow-soft p-6">
+            <div key={i} className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               {section.title?.trim() && (
                 <h2 className="font-heading text-base font-semibold text-zinc-900 mb-3">{section.title}</h2>
               )}
@@ -193,12 +193,12 @@ export default function JobDetails() {
           ))}
 
           {linkButtons.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-soft p-6">
+            <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <h2 className="font-heading text-base font-semibold text-zinc-900 mb-4">Important Links</h2>
               <div className="flex flex-wrap gap-3">
                 {linkButtons.map((btn, i) => (
-                  <a key={i} href={btn.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold shadow-soft hover:opacity-90 transition" style={{ backgroundColor: btn.bgColor || '#8b2df2', color: btn.textColor || '#ffffff' }}>
-                    {btn.text} <ExternalLink className="w-4 h-4" />
+                  <a key={i} href={btn.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 max-w-full px-5 py-2.5 rounded-xl text-sm font-semibold shadow-soft hover:opacity-90 transition" style={{ backgroundColor: btn.bgColor || '#8b2df2', color: btn.textColor || '#ffffff' }}>
+                    {btn.text} <ExternalLink className="w-4 h-4 shrink-0" />
                   </a>
                 ))}
               </div>
@@ -208,7 +208,7 @@ export default function JobDetails() {
 
         {/* Sidebar */}
         <div className="space-y-4">
-          <div className="bg-white rounded-2xl shadow-soft p-6">
+          <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
             <h2 className="font-heading text-base font-semibold text-zinc-900 mb-4">Job Summary</h2>
             <div className="space-y-4">
               <SummaryItem icon={Briefcase} label="Experience" value={job.experience || ''} />
@@ -224,7 +224,7 @@ export default function JobDetails() {
           </div>
 
           {skills.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-soft p-6">
+            <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-3">
                 <Code2 className="w-5 h-5 text-[#8b2df2]" />
                 <h2 className="font-heading text-base font-semibold text-zinc-900">Skills</h2>
@@ -238,7 +238,7 @@ export default function JobDetails() {
           )}
 
           {company && (
-            <div className="bg-white rounded-2xl shadow-soft p-6">
+            <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-2">
                 <Info className="w-5 h-5 text-[#8b2df2]" />
                 <h2 className="font-heading text-base font-semibold text-zinc-900">About {company}</h2>

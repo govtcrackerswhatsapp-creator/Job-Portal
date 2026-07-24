@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { db } from '../lib/firebase';
+import { useAuth } from '../contexts/AuthContext';
 import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
 import { Download, Upload, Loader2, AlertTriangle, CheckCircle2, Database } from 'lucide-react';
 
@@ -14,6 +15,7 @@ interface BackupData {
 }
 
 export default function BackupRestore() {
+  const { user } = useAuth();
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [mode, setMode] = useState<'merge' | 'overwrite'>('merge');
@@ -70,16 +72,33 @@ export default function BackupRestore() {
       if (!backup.collections) throw new Error('Invalid backup file.');
 
       let count = 0;
+      let failed = 0;
+      let skippedSelf = 0;
       for (const col of Object.keys(backup.collections)) {
         if (!COLLECTIONS.includes(col)) continue; // ignore unknown collections
         const docs = backup.collections[col];
         for (const id of Object.keys(docs)) {
-          // merge:true adds/updates fields; without merge (overwrite) it replaces the doc.
-          await setDoc(doc(db, col, id), docs[id], mode === 'merge' ? { merge: true } : {});
-          count++;
+          // LOCKOUT GUARD: never restore your own user document. An older backup
+          // may hold a pre-promotion role, which would demote you mid-restore and
+          // make every remaining write fail. Your own account is left untouched.
+          if (col === 'users' && user && id === user.uid) { skippedSelf++; continue; }
+          try {
+            // merge:true adds/updates fields; without merge (overwrite) it replaces the doc.
+            await setDoc(doc(db, col, id), docs[id], mode === 'merge' ? { merge: true } : {});
+            count++;
+          } catch (docErr) {
+            // One bad document must not abandon the whole restore partway.
+            failed++;
+            console.error(`Restore failed for ${col}/${id}:`, docErr);
+          }
         }
       }
-      showStatus('ok', `Restore complete — ${count} documents ${mode === 'merge' ? 'merged' : 'written'}. Refresh to see changes.`);
+      const extra = [
+        failed > 0 ? `${failed} failed (see console)` : '',
+        skippedSelf > 0 ? 'your own account was skipped' : '',
+      ].filter(Boolean).join(', ');
+      showStatus(failed > 0 ? 'err' : 'ok',
+        `Restore finished — ${count} documents ${mode === 'merge' ? 'merged' : 'written'}${extra ? ` (${extra})` : ''}. Refresh to see changes.`);
     } catch (err) {
       console.error('Import error:', err);
       showStatus('err', 'Restore failed — the file may be invalid or you lack permissions.');
@@ -113,7 +132,7 @@ export default function BackupRestore() {
           <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0"><Upload className="w-5 h-5 text-blue-600" /></div>
           <div>
             <h3 className="font-medium text-zinc-900">Restore from Backup</h3>
-            <p className="text-sm text-zinc-500">Upload a backup JSON to restore data.</p>
+            <p className="text-sm text-zinc-500">Upload a backup JSON to restore data. Your own admin account is never overwritten, so a restore cannot lock you out.</p>
           </div>
         </div>
 

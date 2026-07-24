@@ -70,6 +70,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               name: firebaseUser.displayName,
               photoURL: firebaseUser.photoURL,
               subscriptionStatus: 'inactive',
+              // Recorded so Data Retention can filter by real account age.
+              createdAt: Date.now(),
             };
 
             // Apply a pre-granted free-access invite (only for non-managers).

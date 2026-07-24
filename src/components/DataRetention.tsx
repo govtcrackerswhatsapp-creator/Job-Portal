@@ -27,7 +27,8 @@ export default function DataRetention() {
   const [searching, setSearching] = useState(false);
 
   // Preview + confirm flow
-  const [preview, setPreview] = useState<{ toDelete: UserProfile[]; exemptCount: number } | null>(null);
+  const [includeUndated, setIncludeUndated] = useState(false);
+  const [preview, setPreview] = useState<{ toDelete: UserProfile[]; exemptCount: number; undatedProtected: number } | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -65,32 +66,42 @@ export default function DataRetention() {
       snap.forEach((d) => all.push(d.data() as UserProfile));
 
       let exempt = 0;
+      let undatedProtected = 0;
       const toDelete = all.filter((u) => {
         // GUARDRAIL: superadmin is NEVER deleted.
         if (u.role === 'superadmin') { return false; }
         // GUARDRAIL: active subscribers (paid or free-access) are NEVER deleted.
         if (u.freeAccess === true || hasActivePaidSubscription(u)) { exempt++; return false; }
 
-        // Age filter (by account creation — using subscriptionStart if present, else skip age for users without a timestamp).
-        // Note: user docs may not store createdAt; we treat missing-timestamp users as eligible only for org-wide/explicit targets.
-        const created = (u as any).createdAt as number | undefined;
-        const olderThanCutoff = created ? created < cutoff : true;
+        // A named manager is chosen by hand, so account age never applies.
+        if (target === 'specific_manager') {
+          return u.uid === selectedManager?.uid; // jobs survive separately
+        }
+
+        const created = typeof u.createdAt === 'number' ? u.createdAt : null;
+
+        // GUARDRAIL: accounts with no recorded signup date (created before
+        // createdAt was tracked) have an UNKNOWN age. Deleting them by age would
+        // be a guess, so they are protected unless the admin explicitly opts in.
+        if (created === null) {
+          if (!includeUndated) { undatedProtected++; return false; }
+        } else if (created >= cutoff) {
+          return false; // account is newer than the cutoff
+        }
 
         switch (target) {
           case 'users':
-            return u.role === 'user' && olderThanCutoff;
+            return u.role === 'user';
           case 'all_managers':
-            return u.role === 'manager' && olderThanCutoff;
-          case 'specific_manager':
-            return u.uid === selectedManager?.uid; // the chosen manager (jobs survive separately)
+            return u.role === 'manager';
           case 'all_organisation':
-            return olderThanCutoff; // everyone old except the exempt above
+            return true;
           default:
             return false;
         }
       });
 
-      setPreview({ toDelete, exemptCount: exempt });
+      setPreview({ toDelete, exemptCount: exempt, undatedProtected });
     } catch (e) {
       console.error('Preview error:', e);
       alert('Failed to build preview.');
@@ -105,18 +116,30 @@ export default function DataRetention() {
     try {
       setDeleting(true);
       let count = 0;
+      let failed = 0;
       for (const u of preview.toDelete) {
-        await deleteDoc(doc(db, 'users', u.uid));
-        // Also remove their saved-jobs cart (their jobs are intentionally left intact).
-        try { await deleteDoc(doc(db, 'carts', u.uid)); } catch { /* no cart is fine */ }
-        count++;
+        // One failure must not abandon the rest — record it and carry on, so the
+        // final message is an accurate account of what actually happened.
+        try {
+          await deleteDoc(doc(db, 'users', u.uid));
+          // Also remove their saved-jobs cart (their jobs are intentionally left intact).
+          try { await deleteDoc(doc(db, 'carts', u.uid)); } catch { /* no cart is fine */ }
+          count++;
+        } catch (e) {
+          failed++;
+          console.error(`Could not delete user ${u.uid} (${u.email}):`, e);
+        }
       }
-      setResult(`Deleted ${count} user record(s). Payments were protected and managers' jobs were left intact.`);
+      setResult(
+        `Deleted ${count} user record(s).` +
+        (failed > 0 ? ` ${failed} could not be deleted — see the browser console.` : '') +
+        ` Payments were protected and managers' jobs were left intact.`
+      );
       setPreview(null);
       setConfirmText('');
     } catch (e) {
       console.error('Delete error:', e);
-      alert('Deletion failed partway. Some records may remain.');
+      alert('Deletion failed. Some records may remain.');
     } finally {
       setDeleting(false);
     }
@@ -145,6 +168,7 @@ export default function DataRetention() {
         <ul className="list-disc list-inside space-y-0.5 text-emerald-700">
           <li>Superadmin (you)</li>
           <li>Active subscribers & free-access users</li>
+          <li>Accounts with no recorded signup date (unknown age)</li>
           <li>All payment records (kept for tax/legal)</li>
           <li>Jobs posted by a deleted manager (they stay until they expire naturally)</li>
         </ul>
@@ -192,7 +216,17 @@ export default function DataRetention() {
           {useCustom && (
             <input type="number" min="1" className="w-40 px-3 py-2 rounded-lg border border-zinc-200 text-sm bg-white mb-2" value={customDays} onChange={(e) => { setCustomDays(e.target.value); reset(); }} placeholder="Days" />
           )}
-          <p className="text-xs text-zinc-400 mb-4">Currently: older than <strong>{effectiveDays || '?'}</strong> days.</p>
+          <p className="text-xs text-zinc-400 mb-3">Currently: older than <strong>{effectiveDays || '?'}</strong> days.</p>
+
+          <label className="flex items-start gap-2 mb-4 text-sm text-zinc-600 bg-zinc-50 border border-zinc-100 rounded-xl p-3">
+            <input type="checkbox" checked={includeUndated} onChange={(e) => { setIncludeUndated(e.target.checked); reset(); }} className="mt-0.5" />
+            <span>
+              Also include accounts with <strong>no recorded signup date</strong>.
+              <span className="block text-xs text-zinc-500 mt-0.5">
+                Accounts created before signup dates were tracked have an unknown age. They are protected by default — tick this only if you intend to delete them regardless of age.
+              </span>
+            </span>
+          </label>
         </>
       )}
 
@@ -213,7 +247,7 @@ export default function DataRetention() {
             This will permanently delete {preview.toDelete.length} record(s).
           </p>
           <p className="text-sm text-zinc-600 mb-3">
-            Target: <strong>{targetLabel[target]}</strong>. {preview.exemptCount > 0 && <>{preview.exemptCount} active subscriber(s) were protected and excluded. </>}
+            Target: <strong>{targetLabel[target]}</strong>. {preview.exemptCount > 0 && <>{preview.exemptCount} active subscriber(s) were protected and excluded. </>}{preview.undatedProtected > 0 && <>{preview.undatedProtected} account(s) with no recorded signup date were protected and excluded. </>}
             Payments and managers' jobs are not affected.
           </p>
 

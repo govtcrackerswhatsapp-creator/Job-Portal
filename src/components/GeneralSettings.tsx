@@ -64,7 +64,7 @@ export default function GeneralSettings() {
 
       <div className="space-y-4">
         {/* Maintenance */}
-        <div className="border border-zinc-100 rounded-xl p-5">
+        <div className="border border-zinc-100 rounded-xl p-4 sm:p-5">
           <div className="flex items-start gap-3 mb-4">
             <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center shrink-0"><Wrench className="w-5 h-5 text-amber-600" /></div>
             <div className="flex-1">
@@ -89,9 +89,9 @@ export default function GeneralSettings() {
 
           {/* Manual */}
           {mode === 'manual' && (
-            <div className="flex items-center justify-between bg-zinc-50 rounded-lg p-4">
-              <span className="text-sm text-zinc-700">Turn maintenance {form.maintenanceMode ? 'OFF' : 'ON'} immediately</span>
-              <label className="relative inline-flex items-center cursor-pointer">
+            <div className="flex items-center justify-between gap-3 bg-zinc-50 rounded-lg p-4">
+              <span className="text-sm text-zinc-700 min-w-0">Turn maintenance {form.maintenanceMode ? 'OFF' : 'ON'} immediately</span>
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
                 <input type="checkbox" className="sr-only peer" checked={!!form.maintenanceMode} onChange={(e) => set('maintenanceMode', e.target.checked)} />
                 <div className="w-11 h-6 bg-zinc-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
               </label>
@@ -102,7 +102,7 @@ export default function GeneralSettings() {
           {mode === 'onetime' && (
             <div className="bg-zinc-50 rounded-lg p-4 space-y-3">
               <p className="text-xs text-zinc-500 flex items-center gap-1"><Info className="w-3.5 h-3.5" /> Maintenance shows continuously between these two IST date-times.</p>
-              <div className="grid sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-zinc-700 mb-1">Start (IST)</label>
                   <input type="datetime-local" className={inputCls} value={form.maintenanceStart || ''} onChange={(e) => set('maintenanceStart', e.target.value)} />
@@ -119,7 +119,7 @@ export default function GeneralSettings() {
           {mode === 'daily' && (
             <div className="bg-zinc-50 rounded-lg p-4 space-y-3">
               <p className="text-xs text-zinc-500 flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> Every day within the date range, maintenance shows during the daily time window (IST). Overnight windows (e.g. 23:00–02:00) are supported.</p>
-              <div className="grid sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-zinc-700 mb-1">Daily start time (IST)</label>
                   <input type="time" className={inputCls} value={form.maintenanceDailyStartTime || ''} onChange={(e) => set('maintenanceDailyStartTime', e.target.value)} />
@@ -153,9 +153,9 @@ export default function GeneralSettings() {
         </div>
 
         {/* Manager analytics access */}
-        <div className="border border-zinc-100 rounded-xl p-5">
+        <div className="border border-zinc-100 rounded-xl p-4 sm:p-5">
           <div className="flex items-start justify-between gap-4">
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-3 min-w-0">
               <div className="w-10 h-10 rounded-lg bg-[#8b2df2]/10 flex items-center justify-center shrink-0"><BarChart3 className="w-5 h-5 text-[#8b2df2]" /></div>
               <div>
                 <h3 className="font-medium text-zinc-900">Manager Analytics Access</h3>

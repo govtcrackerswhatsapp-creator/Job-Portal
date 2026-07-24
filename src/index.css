@@ -7,11 +7,35 @@
   --brand-cyan: #00b4d8;
 }
 
+html {
+  /* iOS Safari inflates text in landscape without this. */
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: #f5f5f7;
   color: #18181b;
+  /* Safety net: a long unbroken string (a URL or long token in job data) can
+     never force a card wider than the screen. Only applies when a word truly
+     does not fit, so normal text is unaffected. */
+  overflow-wrap: break-word;
+}
+
+/* Horizontally scrollable rows (the dashboard filter chips). Still scrollable
+   by touch, trackpad and wheel, but with no visible scrollbar track. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  /* Stops a sideways swipe on the chip row from triggering the browser back
+     gesture on iOS and Android. */
+  overscroll-behavior-x: contain;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 .font-heading {

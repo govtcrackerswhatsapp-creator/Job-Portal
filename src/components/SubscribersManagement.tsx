@@ -226,7 +226,7 @@ export default function SubscribersManagement() {
 
       {/* Grant tool */}
       {showGrant && (
-        <div className="bg-zinc-50 rounded-xl p-5 border border-zinc-100 mb-4">
+        <div className="bg-zinc-50 rounded-xl p-4 sm:p-5 border border-zinc-100 mb-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-medium text-zinc-900">Grant access to a user</h3>
             <button onClick={() => setShowGrant(false)} className="p-1 text-zinc-400 hover:text-zinc-700"><X className="w-4 h-4" /></button>
@@ -254,7 +254,7 @@ export default function SubscribersManagement() {
               </button>
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-3 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
               <div>
                 <label className="block text-xs font-medium text-zinc-600 mb-1">Label (shown as plan)</label>
                 <input value={emailLabel} onChange={(e) => setEmailLabel(e.target.value)} placeholder={emailKind === 'timed' ? 'Manual Grant' : 'Free Access'} className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30" />
@@ -280,7 +280,7 @@ export default function SubscribersManagement() {
           </div>
 
           {/* Grant settings */}
-          <div className="grid sm:grid-cols-2 gap-3 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div>
               <label className="block text-xs font-medium text-zinc-600 mb-1">Subscription label</label>
               <input value={grantPlanName} onChange={(e) => setGrantPlanName(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30" />
@@ -301,12 +301,12 @@ export default function SubscribersManagement() {
                     <p className="text-sm font-medium text-zinc-900 truncate">{u.name || 'User'}</p>
                     <p className="text-xs text-zinc-400 truncate">{u.email}</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => grantSubscription(u)} disabled={acting === u.uid} className="inline-flex items-center gap-1 text-xs font-medium bg-[#8b2df2] text-white px-3 py-1.5 rounded-lg hover:opacity-90 disabled:opacity-50">
-                      <CalendarClock className="w-3.5 h-3.5" /> {grantDays}d subscription
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button onClick={() => grantSubscription(u)} disabled={acting === u.uid} className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium bg-[#8b2df2] text-white px-3 py-1.5 rounded-lg hover:opacity-90 disabled:opacity-50">
+                      <CalendarClock className="w-3.5 h-3.5 shrink-0" /> {grantDays}d subscription
                     </button>
-                    <button onClick={() => grantFreeAccess(u)} disabled={acting === u.uid} className="inline-flex items-center gap-1 text-xs font-medium bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:opacity-90 disabled:opacity-50">
-                      <Gift className="w-3.5 h-3.5" /> Free access
+                    <button onClick={() => grantFreeAccess(u)} disabled={acting === u.uid} className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:opacity-90 disabled:opacity-50">
+                      <Gift className="w-3.5 h-3.5 shrink-0" /> Free access
                     </button>
                   </div>
                 </div>
@@ -334,7 +334,7 @@ export default function SubscribersManagement() {
                     {i.planName ? ` • ${i.planName}` : ''}
                   </p>
                 </div>
-                <button onClick={() => cancelInvite(i.email)} disabled={acting === i.email} className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg disabled:opacity-50">
+                <button onClick={() => cancelInvite(i.email)} disabled={acting === i.email} className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap text-xs font-medium text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg disabled:opacity-50">
                   {acting === i.email ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Cancel
                 </button>
               </div>
@@ -388,7 +388,7 @@ export default function SubscribersManagement() {
                   <td className="px-4 py-3 text-zinc-600 whitespace-nowrap">{formatDate(u.subscriptionStart) || '—'}</td>
                   <td className="px-4 py-3 text-zinc-600 whitespace-nowrap">{u.freeAccess ? 'No expiry' : formatDate(u.subscriptionExpiry) || '—'}</td>
                   <td className="px-4 py-3 text-right">
-                    <button onClick={() => revoke(u)} disabled={acting === u.uid} className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg disabled:opacity-50">
+                    <button onClick={() => revoke(u)} disabled={acting === u.uid} className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap text-xs font-medium text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg disabled:opacity-50">
                       {acting === u.uid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />} Revoke
                     </button>
                   </td>

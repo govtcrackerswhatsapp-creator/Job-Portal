@@ -45,7 +45,7 @@ export default function JobCard({ job, index, user, isSaved, onToggleSave, savin
   };
 
   return (
-    <div className={`relative bg-gradient-to-b ${theme.grad} to-white rounded-2xl shadow-soft hover:shadow-soft-hover transition p-5 flex flex-col`}>
+    <div className={`relative min-w-0 bg-gradient-to-b ${theme.grad} to-white rounded-2xl shadow-soft hover:shadow-soft-hover transition p-4 sm:p-5 flex flex-col`}>
       {/* Top row: category + save */}
       <div className="flex items-start justify-between mb-3">
         <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-white/80 backdrop-blur" style={{ color: theme.ring }}>
@@ -54,7 +54,7 @@ export default function JobCard({ job, index, user, isSaved, onToggleSave, savin
         <button
           onClick={() => onToggleSave(job.id || '')}
           disabled={savingId === job.id}
-          className={`p-1.5 rounded-lg transition shrink-0 ${isSaved ? 'text-[#8b2df2]' : 'text-zinc-400 hover:text-zinc-600'}`}
+          className={`p-2.5 sm:p-1.5 rounded-lg transition shrink-0 ${isSaved ? 'text-[#8b2df2]' : 'text-zinc-400 hover:text-zinc-600'}`}
           title={isSaved ? 'Remove from saved' : 'Save job'}
         >
           {savingId === job.id ? <Loader2 className="w-5 h-5 animate-spin" /> : isSaved ? <BookmarkCheck className="w-5 h-5" /> : <Bookmark className="w-5 h-5" />}
@@ -89,13 +89,13 @@ export default function JobCard({ job, index, user, isSaved, onToggleSave, savin
       {(job.location?.trim() || job.experience?.trim() || job.salary?.trim()) && (
         <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-sm text-zinc-500 mb-3">
           {job.location?.trim() && (
-            <span className="inline-flex items-center gap-1"><MapPin className="w-4 h-4" /> {job.location}</span>
+            <span className="inline-flex items-center gap-1 min-w-0"><MapPin className="w-4 h-4 shrink-0" /> {job.location}</span>
           )}
           {job.experience?.trim() && (
-            <span className="inline-flex items-center gap-1"><Briefcase className="w-4 h-4" /> {job.experience}</span>
+            <span className="inline-flex items-center gap-1 min-w-0"><Briefcase className="w-4 h-4 shrink-0" /> {job.experience}</span>
           )}
           {job.salary?.trim() && (
-            <span className="inline-flex items-center gap-1 font-semibold text-zinc-900"><IndianRupee className="w-4 h-4" /> {job.salary}</span>
+            <span className="inline-flex items-center gap-1 min-w-0 font-semibold text-zinc-900"><IndianRupee className="w-4 h-4 shrink-0" /> {job.salary}</span>
           )}
         </div>
       )}
@@ -118,17 +118,18 @@ export default function JobCard({ job, index, user, isSaved, onToggleSave, savin
       {/* Last date (if present) */}
       {job.applicationEndDate && (
         <div className="inline-flex items-center gap-1 text-xs text-zinc-400 mb-3">
-          <Calendar className="w-3.5 h-3.5" /> Last date: {formatDate(job.applicationEndDate)}
+          <Calendar className="w-3.5 h-3.5 shrink-0" /> Last date: {formatDate(job.applicationEndDate)}
         </div>
       )}
 
       {/* Footer: posted + view details */}
-      <div className="mt-auto pt-3 border-t border-zinc-100 flex items-center justify-between">
-        <span className="inline-flex items-center gap-1 text-xs text-zinc-400">
-          <Clock className="w-3.5 h-3.5" /> {formatDate(job.createdAt) || 'Recently'}
+      <div className="mt-auto pt-3 border-t border-zinc-100 flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1 text-xs text-zinc-400 min-w-0">
+          <Clock className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">{formatDate(job.createdAt) || 'Recently'}</span>
         </span>
-        <button onClick={openJob} className={`inline-flex items-center gap-1.5 bg-gradient-to-r ${theme.btn} text-white rounded-lg px-3.5 py-1.5 text-sm font-semibold shadow-sm hover:opacity-90 transition`}>
-          View Details <ArrowRight className="w-4 h-4" />
+        <button onClick={openJob} className={`shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap bg-gradient-to-r ${theme.btn} text-white rounded-lg px-3.5 py-1.5 text-sm font-semibold shadow-sm hover:opacity-90 transition`}>
+          View Details <ArrowRight className="w-4 h-4 shrink-0" />
         </button>
       </div>
     </div>
