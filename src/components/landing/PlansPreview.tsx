@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react';
 import { getPlans } from '../../lib/plansData';
-import { SubscriptionPlan } from '../../types';
+import { SubscriptionPlan, PlanTier } from '../../types';
 import { formatRupees } from '../../lib/format';
 import { Check, Loader2, Crown } from 'lucide-react';
 
 export default function PlansPreview({ onSignIn }: { onSignIn: () => void }) {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
+  // Per-plan chosen tier id (display only — the real purchase happens after sign-in).
+  const [selectedTier, setSelectedTier] = useState<Record<string, string>>({});
 
   useEffect(() => {
     (async () => {
       try {
         const all = await getPlans(); // cached
-        setPlans(all.filter((p) => p.active).sort((a, b) => a.price - b.price));
+        const active = all.filter((p) => p.active).sort((a, b) => a.price - b.price);
+        setPlans(active);
+        const defaults: Record<string, string> = {};
+        active.forEach((pl) => { if (pl.tiers && pl.tiers.length > 0 && pl.id) defaults[pl.id] = pl.tiers[0].id; });
+        setSelectedTier(defaults);
       } catch (e) {
         console.error('Error loading plans:', e);
       } finally {
@@ -25,6 +31,21 @@ export default function PlansPreview({ onSignIn }: { onSignIn: () => void }) {
     return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-[#8b2df2] animate-spin" /></div>;
   }
   if (plans.length === 0) return null;
+
+  // The tier chosen for a plan (undefined if the plan has no tiers).
+  const chosenTier = (p: SubscriptionPlan): PlanTier | undefined => {
+    if (!p.tiers || p.tiers.length === 0 || !p.id) return undefined;
+    return p.tiers.find((t) => t.id === selectedTier[p.id!]) || p.tiers[0];
+  };
+  const priceFor = (p: SubscriptionPlan) => { const t = chosenTier(p); return t ? t.price : p.price; };
+  const periodFor = (p: SubscriptionPlan) => { const t = chosenTier(p); return t ? t.label : `${p.durationInDays} days`; };
+  const tierSaving = (p: SubscriptionPlan, t: PlanTier): string => {
+    const base = p.tiers && p.tiers[0];
+    const perMonth = t.price / (t.days / 30);
+    if (!base || base.id === t.id) return `${t.days} days of access`;
+    const pct = Math.round((1 - (t.price / t.days) / (base.price / base.days)) * 100);
+    return pct > 0 ? `${formatRupees(Math.round(perMonth))}/mo · save ${pct}%` : `${formatRupees(Math.round(perMonth))}/mo`;
+  };
 
   return (
     <section className="bg-white py-16">
@@ -47,9 +68,29 @@ export default function PlansPreview({ onSignIn }: { onSignIn: () => void }) {
                   <h3 className="font-heading text-lg font-bold text-zinc-900">{plan.name}</h3>
                 </div>
                 {plan.details && <p className="text-sm text-zinc-500 mb-4">{plan.details}</p>}
+
+                {/* Period chips — display only, for plans with custom tiers. */}
+                {plan.tiers && plan.tiers.length > 1 && plan.id && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {plan.tiers.map((t) => {
+                      const on = (selectedTier[plan.id!] || plan.tiers![0].id) === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          onClick={() => setSelectedTier((prev) => ({ ...prev, [plan.id!]: t.id }))}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${on ? 'bg-[#8b2df2] text-white border-[#8b2df2]' : 'bg-white text-zinc-600 border-zinc-200 hover:border-[#8b2df2]/40'}`}
+                        >
+                          {t.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 <div className="mb-5">
-                  <span className="font-heading text-3xl font-bold text-zinc-900">{formatRupees(plan.price)}</span>
-                  <span className="text-sm text-zinc-400"> / {plan.durationInDays} days</span>
+                  <span className="font-heading text-3xl font-bold text-zinc-900">{formatRupees(priceFor(plan))}</span>
+                  <span className="text-sm text-zinc-400"> / {periodFor(plan)}</span>
+                  {(() => { const t = chosenTier(plan); return t ? <p className="text-xs text-emerald-600 mt-1">{tierSaving(plan, t)}</p> : null; })()}
                 </div>
                 <ul className="space-y-2.5 mb-6 flex-1">
                   {plan.features.map((f, i) => (
