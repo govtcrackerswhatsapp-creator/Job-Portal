@@ -9,6 +9,7 @@ export default function PlansPreview({ onSignIn }: { onSignIn: () => void }) {
   const [loading, setLoading] = useState(true);
   // Per-plan chosen tier id (display only — the real purchase happens after sign-in).
   const [selectedTier, setSelectedTier] = useState<Record<string, string>>({});
+  const [cycle, setCycle] = useState<'monthly' | 'annual'>('monthly');
 
   useEffect(() => {
     (async () => {
@@ -37,8 +38,17 @@ export default function PlansPreview({ onSignIn }: { onSignIn: () => void }) {
     if (!p.tiers || p.tiers.length === 0 || !p.id) return undefined;
     return p.tiers.find((t) => t.id === selectedTier[p.id!]) || p.tiers[0];
   };
-  const priceFor = (p: SubscriptionPlan) => { const t = chosenTier(p); return t ? t.price : p.price; };
-  const periodFor = (p: SubscriptionPlan) => { const t = chosenTier(p); return t ? t.label : `${p.durationInDays} days`; };
+  const anyAnnual = plans.some((p) => p.annualPrice != null);
+  const priceFor = (p: SubscriptionPlan) => {
+    const t = chosenTier(p);
+    if (t) return t.price;
+    return cycle === 'annual' && p.annualPrice != null ? p.annualPrice : p.price;
+  };
+  const periodFor = (p: SubscriptionPlan) => {
+    const t = chosenTier(p);
+    if (t) return t.label;
+    return cycle === 'annual' && p.annualPrice != null ? 'year' : `${p.durationInDays} days`;
+  };
   const tierSaving = (p: SubscriptionPlan, t: PlanTier): string => {
     const base = p.tiers && p.tiers[0];
     const perMonth = t.price / (t.days / 30);
@@ -55,6 +65,16 @@ export default function PlansPreview({ onSignIn }: { onSignIn: () => void }) {
           <h2 className="font-heading text-3xl md:text-4xl font-bold text-zinc-900 mt-1">Simple, transparent plans</h2>
           <p className="text-zinc-500 mt-2">Unlock full details for every job. Cancel anytime.</p>
         </div>
+
+        {anyAnnual && !plans.every((p) => p.tiers && p.tiers.length > 0) && (
+          <div className="flex justify-center mb-8">
+            <div className="inline-flex bg-white rounded-full p-1 shadow-soft">
+              <button onClick={() => setCycle('monthly')} className={`px-5 py-2 rounded-full text-sm font-medium transition ${cycle === 'monthly' ? 'bg-[#8b2df2] text-white' : 'text-zinc-600'}`}>Monthly</button>
+              <button onClick={() => setCycle('annual')} className={`px-5 py-2 rounded-full text-sm font-medium transition ${cycle === 'annual' ? 'bg-[#8b2df2] text-white' : 'text-zinc-600'}`}>Yearly</button>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-4xl mx-auto">
           {plans.map((plan) => {
             const featured = !!plan.badge;
