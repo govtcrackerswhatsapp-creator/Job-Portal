@@ -35,6 +35,8 @@ export interface JobLinkButton {
 
 export interface Job {
   id?: string;
+  /** Stable identity used by the bulk importer to match and overwrite instead of duplicating. */
+  refCode?: string;
   title: string;
   category: JobCategory;
   ageLimit: string;

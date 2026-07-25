@@ -4,12 +4,16 @@ import { collection, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestor
 import { useAuth } from '../contexts/AuthContext';
 import { getJobs, clearJobsCache } from '../lib/jobsData';
 import { Job, JobCategory, JobSection, JobLinkButton, WorkMode } from '../types';
-import { categoryBadgeClass, categoryLabel, formatDate } from '../lib/format';
+import { categoryBadgeClass, categoryLabel, formatDate, dateInputToTimestamp, timestampToDateInput } from '../lib/format';
 import { sanitizeHtml, isEmptyHtml } from '../lib/richText';
 import RichTextEditor from '../components/RichTextEditor';
-import { Plus, Pencil, Trash2, X, Loader2, Save, Briefcase, AlertTriangle, ArrowUp, ArrowDown, Link as LinkIcon } from 'lucide-react';
+import JobImportPanel from '../components/JobImportPanel';
+import { jobIdentity } from '../lib/jobImport';
+import { downloadJobsExport } from '../lib/jobTemplate';
+import { Plus, Pencil, Trash2, X, Loader2, Save, Briefcase, AlertTriangle, ArrowUp, ArrowDown, Link as LinkIcon, Upload, Download } from 'lucide-react';
 
 interface JobFormState {
+  refCode: string;
   title: string;
   category: JobCategory;
   ageLimit: string;
@@ -31,7 +35,7 @@ interface JobFormState {
 }
 
 const EMPTY_JOB: JobFormState = {
-  title: '', category: 'government', ageLimit: '',
+  refCode: '', title: '', category: 'government', ageLimit: '',
   notificationDate: null, applicationStartDate: null, applicationEndDate: null,
   educationalQualification: '', examDetails: '', studyMaterial: '', customSections: [], linkButtons: [],
   companyName: '', companyLogo: '', salary: '', experience: '', location: '', workMode: '', skills: '',
@@ -39,16 +43,9 @@ const EMPTY_JOB: JobFormState = {
 
 const inputCls = 'w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30 focus:border-[#8b2df2] bg-white';
 
-function dateToInput(ms: number | null): string {
-  if (!ms) return '';
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-function inputToTimestamp(value: string): number | null {
-  if (!value) return null;
-  const ms = new Date(value + 'T00:00:00').getTime();
-  return isNaN(ms) ? null : ms;
-}
+// Shared with the bulk importer (lib/format.ts) so both paths store dates identically.
+const dateToInput = timestampToDateInput;
+const inputToTimestamp = dateInputToTimestamp;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const THIRTY_DAYS = 30 * DAY_MS;
@@ -81,6 +78,7 @@ export default function ManageJobs() {
   const [view, setView] = useState<'active' | 'expired'>('active');
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showImport, setShowImport] = useState(false);
 
   // The rich-text editors are uncontrolled (that is what stops the caret jumping).
   // Bumping these counters changes their React `key`, forcing a clean remount with
@@ -145,6 +143,21 @@ export default function ManageJobs() {
     }
   };
 
+  const openImport = async () => {
+    // Refresh first: matching is done against this list, and a stale list would
+    // duplicate a job another admin added since the page loaded.
+    if (!showImport) await fetchJobs();
+    setShowImport((v) => !v);
+  };
+
+  const handleExport = () => {
+    // Managers get their own jobs — those are the ones they can re-import,
+    // since Firestore rules block updating anyone else's.
+    const scope = user?.role === 'superadmin' ? shownJobs : shownJobs.filter((j) => j.createdBy === user?.uid);
+    if (scope.length === 0) { alert('There is nothing to export in this view.'); return; }
+    downloadJobsExport(scope, view);
+  };
+
   const openCreate = () => {
     setForm({ ...EMPTY_JOB });
     setEditingId(null);
@@ -155,7 +168,7 @@ export default function ManageJobs() {
 
   const openEdit = (job: Job) => {
     setForm({
-      title: job.title, category: job.category, ageLimit: job.ageLimit,
+      refCode: job.refCode || '', title: job.title, category: job.category, ageLimit: job.ageLimit,
       notificationDate: job.notificationDate ?? null, applicationStartDate: job.applicationStartDate ?? null, applicationEndDate: job.applicationEndDate ?? null,
       educationalQualification: job.educationalQualification, examDetails: job.examDetails || '', studyMaterial: job.studyMaterial || '',
       customSections: job.customSections ? [...job.customSections] : [],
@@ -212,6 +225,27 @@ export default function ManageJobs() {
   const handleSave = async () => {
     if (!user) return;
     if (!form.title.trim()) { alert('Please enter a job title.'); return; }
+
+    // Identity guard: the same reference must never exist on two jobs. This
+    // blocks rather than silently overwriting — in this form you believe you
+    // are creating something new, so a silent overwrite would be a nasty
+    // surprise. The importer, where you have explicitly asked to reconcile a
+    // batch, updates in place instead.
+    const identity = jobIdentity({
+      refCode: form.refCode,
+      title: form.title,
+      category: form.category,
+      companyName: form.companyName,
+    });
+    const clash = jobs.find((j) => (j.id || '') !== (editingId || '') && jobIdentity(j) === identity);
+    if (clash) {
+      alert(
+        'Another job already uses the reference "' + identity + '":\n\n' + clash.title +
+        '\n\nEdit that job instead, or give this one a different Reference Code.'
+      );
+      return;
+    }
+
     try {
       setSaving(true);
       // Rich-text fields are sanitised here, so only allow-listed markup ever
@@ -225,6 +259,7 @@ export default function ManageJobs() {
       const cleanSkills = form.skills.split(',').map((s) => s.trim()).filter(Boolean);
       const payload = {
         ...form,
+        refCode: identity,
         ageLimit: isEmptyHtml(form.ageLimit) ? '' : sanitizeHtml(form.ageLimit),
         educationalQualification: isEmptyHtml(form.educationalQualification) ? '' : sanitizeHtml(form.educationalQualification),
         examDetails: isEmptyHtml(form.examDetails) ? '' : sanitizeHtml(form.examDetails),
@@ -278,11 +313,29 @@ export default function ManageJobs() {
           <h1 className="font-heading text-3xl font-bold text-zinc-900">Manage Jobs</h1>
         </div>
         {!showForm && (
-          <button onClick={openCreate} className="inline-flex items-center gap-2 bg-gradient-to-r from-[#8b2df2] to-[#00b4d8] text-white rounded-xl px-4 py-2.5 text-sm font-semibold shadow-soft hover:opacity-90 transition">
-            <Plus className="w-4 h-4" /> New Job
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={handleExport} className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 transition">
+              <Download className="w-4 h-4" /> Export
+            </button>
+            <button onClick={openImport} className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 transition">
+              <Upload className="w-4 h-4" /> Import
+            </button>
+            <button onClick={openCreate} className="inline-flex items-center gap-2 bg-gradient-to-r from-[#8b2df2] to-[#00b4d8] text-white rounded-xl px-4 py-2.5 text-sm font-semibold shadow-soft hover:opacity-90 transition">
+              <Plus className="w-4 h-4" /> New Job
+            </button>
+          </div>
         )}
       </div>
+
+      {showImport && !showForm && user && (
+        <JobImportPanel
+          existingJobs={jobs}
+          uid={user.uid}
+          isAdmin={user.role === 'superadmin'}
+          onClose={() => setShowImport(false)}
+          onImported={fetchJobs}
+        />
+      )}
 
       {showForm ? (
         <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
@@ -299,6 +352,13 @@ export default function ManageJobs() {
           <div className="space-y-4">
             <Field label="Job Title">
               <input className={inputCls} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. SSC CGL 2026 Notification" />
+            </Field>
+
+            <Field label="Reference Code (optional)">
+              <input className={inputCls} value={form.refCode} onChange={(e) => setForm({ ...form, refCode: e.target.value })} placeholder="e.g. ssc-cgl-2026" />
+              <p className="text-xs text-zinc-400 mt-1">
+                Stable identity used by Import/Export. Leave blank and one is generated from the title, company and category.
+              </p>
             </Field>
 
             <div className="sm:max-w-xs">

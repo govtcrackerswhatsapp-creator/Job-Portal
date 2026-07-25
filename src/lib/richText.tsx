@@ -55,7 +55,7 @@ const TAG_CLASS: Record<string, string> = {
 };
 
 /** Only these protocols are allowed on links. Blocks javascript: and data: URLs. */
-function safeUrl(raw: string | null): string | null {
+export function safeUrl(raw: string | null): string | null {
   if (!raw) return null;
   const url = raw.trim();
   if (/^(https?:\/\/|mailto:|tel:)/i.test(url)) return url;

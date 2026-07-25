@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(effective);
           } else {
             // First login: check the admin-controlled invite lists.
-            // 1) manager_invites  -> create as 'manager'  (unchanged; keyed by the raw email)
+            // 1) manager_invites  -> create as 'manager'  (keyed by LOWERCASE email)
             // 2) free_access_invites -> create as 'user' WITH pre-granted access
             //    (permanent free access, or a time-limited subscription).
             // These are cheap direct document reads done only on first login.
@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             let freeInvite: any = null;
             if (email) {
               try {
-                const inviteSnap = await getDoc(doc(db, 'manager_invites', email));
+                const inviteSnap = await getDoc(doc(db, 'manager_invites', email.toLowerCase()));
                 invitedAsManager = inviteSnap.exists();
               } catch (e) {
                 console.error('AuthContext: manager invite check failed (defaulting to user).', e);

@@ -5,7 +5,7 @@ import { hasPortalAccess } from '../lib/access';
 import { getJob } from '../lib/jobsData';
 import { Job } from '../types';
 import { categoryBadgeClass, categoryLabel, workModeLabel, formatDate } from '../lib/format';
-import { FormattedText, isEmptyHtml } from '../lib/richText';
+import { FormattedText, isEmptyHtml, safeUrl } from '../lib/richText';
 import { ArrowLeft, Calendar, GraduationCap, Users, Loader2, FileText, BookOpen, ExternalLink, MapPin, Briefcase, IndianRupee, BadgeCheck, Code2, Info, Building2 } from 'lucide-react';
 
 function initials(name: string): string {
@@ -100,7 +100,12 @@ export default function JobDetails() {
   const company = (job.companyName || '').trim();
   const skills = (job.skills || []).filter((s) => s.trim());
   const wm = workModeLabel(job.workMode);
-  const linkButtons = (job.linkButtons || []).filter((b) => b.text?.trim() && b.url?.trim());
+  // Button URLs go through the same allow-list as links inside rich text.
+  // Without this a protocol-less "www.ssc.nic.in" resolves as a RELATIVE path
+  // (so the button 404s) and a javascript: URL would render as a live link.
+  const linkButtons = (job.linkButtons || [])
+    .map((b) => ({ ...b, url: safeUrl(b.url || '') }))
+    .filter((b) => b.text?.trim() && !!b.url) as { text: string; url: string; bgColor: string; textColor: string }[];
   const customSections = (job.customSections || []).filter((s) => s.title?.trim() || !isEmptyHtml(s.content));
   const hasSummary = !!(job.experience || job.salary || job.location || wm || job.applicationEndDate) || !isEmptyHtml(job.ageLimit);
 

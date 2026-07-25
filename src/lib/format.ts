@@ -64,3 +64,20 @@ export function formatDate(ms?: number | null): string {
 export function formatRupees(amount: number): string {
   return `₹${amount.toLocaleString('en-IN')}`;
 }
+
+/**
+ * Convert a date-input value ("YYYY-MM-DD") to a local-midnight timestamp.
+ * Shared by the job form and the bulk importer so both store dates identically.
+ */
+export function dateInputToTimestamp(value: string): number | null {
+  if (!value) return null;
+  const ms = new Date(value + 'T00:00:00').getTime();
+  return isNaN(ms) ? null : ms;
+}
+
+/** Inverse of dateInputToTimestamp — formats a timestamp for <input type="date">. */
+export function timestampToDateInput(ms: number | null): string {
+  if (!ms) return '';
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
