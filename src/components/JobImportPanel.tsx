@@ -1,11 +1,12 @@
-import { useState, useRef, useMemo } from 'react';
-import { Job } from '../types';
+import { useState, useRef, useMemo, useEffect } from 'react';
+import { Job, Category } from '../types';
 import {
   parseImportText, planImport, buildCreatePayload, buildUpdatePayload,
   MAX_IMPORT_ROWS, ImportPlan, PlannedRow, RowAction,
 } from '../lib/jobImport';
-import { downloadTemplate, AI_PROMPT } from '../lib/jobTemplate';
+import { downloadTemplate, buildAiPrompt } from '../lib/jobTemplate';
 import { commitJobImport, ImportOp, ImportOutcome } from '../lib/jobsData';
+import { getActiveCategories } from '../lib/categoriesData';
 import {
   Upload, Download, Copy, Check, X, AlertTriangle, Loader2, FileText, Plus, Pencil,
 } from 'lucide-react';
@@ -41,6 +42,35 @@ export default function JobImportPanel({ existingJobs, uid, isAdmin, onClose, on
   const [result, setResult] = useState<ImportOutcome | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * The categories a file may reference.
+   *
+   * Loaded here rather than baked into jobImport so that module stays free of
+   * Firestore. Only ACTIVE ones: a disabled category should not accept new
+   * jobs from an import any more than it appears in the job form. Existing
+   * jobs already in a disabled category are untouched — this only governs what
+   * an incoming file may say.
+   */
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  useEffect(() => {
+    getActiveCategories()
+      .then(setCategories)
+      .catch(() => setCategories([]));
+  }, []);
+
+  const categoryIds = useMemo(
+    () => categories.map((c) => c.id).filter((id): id is string => !!id),
+    [categories],
+  );
+
+  /**
+   * Only used if a create row somehow arrives with no category, which
+   * planImport already rejects. Passed rather than hardcoded because the old
+   * 'government' default can now be renamed or disabled.
+   */
+  const fallbackCategory = categoryIds[0] || '';
+
   const actionable = useMemo(
     () => (plan ? plan.rows.filter((r) => r.action === 'create' || r.action === 'update') : []),
     [plan],
@@ -70,12 +100,14 @@ export default function JobImportPanel({ existingJobs, uid, isAdmin, onClose, on
     const parsed = parseImportText(text);
     setParseWarnings(parsed.warnings);
     if (parsed.error) { setParseError(parsed.error); return; }
-    setPlan(planImport(parsed.rows, existingJobs, { uid, isAdmin, replaceMode }));
+    setPlan(planImport(parsed.rows, existingJobs, { uid, isAdmin, replaceMode, categoryIds }));
   };
 
   const handleCopyPrompt = async () => {
     try {
-      await navigator.clipboard.writeText(AI_PROMPT);
+      // Built from the live category ids, so the AI is told this portal's real
+      // options rather than the four that shipped originally.
+      await navigator.clipboard.writeText(buildAiPrompt(categoryIds));
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -87,8 +119,8 @@ export default function JobImportPanel({ existingJobs, uid, isAdmin, onClose, on
     if (!plan || actionable.length === 0) return;
     const ops: ImportOp[] = actionable.map((row) => (
       row.action === 'create'
-        ? { kind: 'create' as const, data: buildCreatePayload(row, uid), label: row.title }
-        : { kind: 'update' as const, id: row.targetId, data: buildUpdatePayload(row, replaceMode), label: row.title }
+        ? { kind: 'create' as const, data: buildCreatePayload(row, uid, fallbackCategory), label: row.title }
+        : { kind: 'update' as const, id: row.targetId, data: buildUpdatePayload(row, replaceMode, fallbackCategory), label: row.title }
     ));
     try {
       setCommitting(true);
@@ -119,7 +151,7 @@ export default function JobImportPanel({ existingJobs, uid, isAdmin, onClose, on
           Download the template, hand it to an AI with the prompt, then paste the JSON it returns below.
         </p>
         <div className="flex flex-wrap gap-2">
-          <button onClick={downloadTemplate} className={btnGhost} type="button">
+          <button onClick={() => downloadTemplate(categoryIds)} className={btnGhost} type="button">
             <FileText className="w-4 h-4" /> Download template
           </button>
           <button onClick={handleCopyPrompt} className={btnGhost} type="button">
@@ -127,6 +159,11 @@ export default function JobImportPanel({ existingJobs, uid, isAdmin, onClose, on
             {copied ? 'Copied' : 'Copy AI prompt'}
           </button>
         </div>
+        {categoryIds.length > 0 && (
+          <p className="text-xs text-zinc-500 mt-3">
+            Valid categories: <span className="font-mono">{categoryIds.join(', ')}</span>
+          </p>
+        )}
       </div>
 
       {/* ---- step 2: supply the data ---- */}
@@ -135,7 +172,7 @@ export default function JobImportPanel({ existingJobs, uid, isAdmin, onClose, on
         onChange={(e) => { setText(e.target.value); reset(); }}
         rows={7}
         spellCheck={false}
-        placeholder={'Paste the JSON here, or choose a file below.\n\n[\n  { "refCode": "ssc-cgl-2026", "title": "SSC CGL 2026", "category": "exam" }\n]'}
+        placeholder={'Paste the JSON here, or choose a file below.\n\n[\n  { "refCode": "ssc-cgl-2026", "title": "SSC CGL 2026", "category": "exam", "examDate": "2026-09-15" }\n]'}
         className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm text-zinc-900 font-mono bg-white focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30 focus:border-[#8b2df2]"
       />
 
@@ -176,7 +213,7 @@ export default function JobImportPanel({ existingJobs, uid, isAdmin, onClose, on
 
       <p className="text-xs text-zinc-400 mt-2">
         {replaceMode
-          ? 'Replace mode: a matched job becomes exactly what the file says — fields the file leaves out will be cleared.'
+          ? 'Replace mode: a matched job becomes exactly what the file says — fields the file leaves out will be cleared, including examDate.'
           : 'Merge mode: fields the file leaves out keep their current values. Up to ' + MAX_IMPORT_ROWS + ' jobs per file.'}
       </p>
 

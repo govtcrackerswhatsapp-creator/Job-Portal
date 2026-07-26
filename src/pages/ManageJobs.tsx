@@ -3,14 +3,16 @@ import { db } from '../lib/firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { getJobs, clearJobsCache } from '../lib/jobsData';
-import { Job, JobCategory, JobSection, JobLinkButton, WorkMode } from '../types';
-import { categoryBadgeClass, categoryLabel, formatDate, dateInputToTimestamp, timestampToDateInput } from '../lib/format';
+import { getCategories, getActiveCategories, labelForCategory, colorForCategory } from '../lib/categoriesData';
+import { Job, Category, JobCategory, JobSection, JobLinkButton, WorkMode } from '../types';
+import { categoryBadgeStyle, formatDate, dateInputToTimestamp, timestampToDateInput } from '../lib/format';
+import { isJobExpired, getJobStage, STAGE_TEXT_CLASS } from '../lib/jobStage';
 import { sanitizeHtml, isEmptyHtml } from '../lib/richText';
 import RichTextEditor from '../components/RichTextEditor';
 import JobImportPanel from '../components/JobImportPanel';
 import { jobIdentity } from '../lib/jobImport';
 import { downloadJobsExport } from '../lib/jobTemplate';
-import { Plus, Pencil, Trash2, X, Loader2, Save, Briefcase, AlertTriangle, ArrowUp, ArrowDown, Link as LinkIcon, Upload, Download } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Loader2, Save, Briefcase, AlertTriangle, ArrowUp, ArrowDown, Link as LinkIcon, Upload, Download, Search, CalendarCheck } from 'lucide-react';
 
 interface JobFormState {
   refCode: string;
@@ -20,6 +22,7 @@ interface JobFormState {
   notificationDate: number | null;
   applicationStartDate: number | null;
   applicationEndDate: number | null;
+  examDate: number | null;
   educationalQualification: string;
   examDetails: string;
   studyMaterial: string;
@@ -34,9 +37,14 @@ interface JobFormState {
   skills: string;
 }
 
+/**
+ * `category` starts EMPTY rather than 'government'. That id can now be renamed
+ * or disabled, so openCreate() fills it from the first active category instead
+ * of assuming one exists.
+ */
 const EMPTY_JOB: JobFormState = {
-  refCode: '', title: '', category: 'government', ageLimit: '',
-  notificationDate: null, applicationStartDate: null, applicationEndDate: null,
+  refCode: '', title: '', category: '', ageLimit: '',
+  notificationDate: null, applicationStartDate: null, applicationEndDate: null, examDate: null,
   educationalQualification: '', examDetails: '', studyMaterial: '', customSections: [], linkButtons: [],
   companyName: '', companyLogo: '', salary: '', experience: '', location: '', workMode: '', skills: '',
 };
@@ -47,16 +55,7 @@ const inputCls = 'w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm tex
 const dateToInput = timestampToDateInput;
 const inputToTimestamp = dateInputToTimestamp;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const THIRTY_DAYS = 30 * DAY_MS;
-function isExpired(job: Job): boolean {
-  const now = Date.now();
-  // The last date to apply is INCLUSIVE. applicationEndDate is stored at 00:00
-  // on that day, so a job stays active for the whole of it and only expires
-  // once the day has fully passed.
-  if (job.applicationEndDate) return job.applicationEndDate + DAY_MS <= now;
-  return job.createdAt < now - THIRTY_DAYS;
-}
+type RangeMode = 'all' | '7d' | '30d' | '90d' | 'custom';
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -70,6 +69,8 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 export default function ManageJobs() {
   const { user } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [activeCategories, setActiveCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -79,6 +80,14 @@ export default function ManageJobs() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showImport, setShowImport] = useState(false);
+  const [search, setSearch] = useState('');
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Export panel
+  const [showExport, setShowExport] = useState(false);
+  const [rangeMode, setRangeMode] = useState<RangeMode>('all');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
 
   // The rich-text editors are uncontrolled (that is what stops the caret jumping).
   // Bumping these counters changes their React `key`, forcing a clean remount with
@@ -86,7 +95,7 @@ export default function ManageJobs() {
   const [formKey, setFormKey] = useState(0);
   const [sectionsKey, setSectionsKey] = useState(0);
 
-  useEffect(() => { fetchJobs(); }, []);
+  useEffect(() => { fetchJobs(); fetchCategories(); }, []);
 
   const fetchJobs = async () => {
     try {
@@ -100,14 +109,63 @@ export default function ManageJobs() {
     }
   };
 
-  const activeJobs = useMemo(() => jobs.filter((j) => !isExpired(j)), [jobs]);
-  const expiredJobs = useMemo(() => jobs.filter((j) => isExpired(j)), [jobs]);
-  const shownJobs = view === 'active' ? activeJobs : expiredJobs;
+  const fetchCategories = async () => {
+    try {
+      // ALL for rendering badges (a job may sit in a disabled category and must
+      // still show its real name), ACTIVE for the form's dropdown.
+      const [all, active] = await Promise.all([getCategories(), getActiveCategories()]);
+      setCategories(all);
+      setActiveCategories(active);
+    } catch (e) {
+      console.error('Error fetching categories:', e);
+    }
+  };
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 5000);
+  };
+
+  /**
+   * Expiry now comes from lib/jobStage, which is also what the job card uses.
+   * One implementation means the Expired tab and the card can never disagree
+   * about the same job. The rule: examDate when set, otherwise
+   * applicationEndDate, and a 30-day age fallback for jobs carrying neither.
+   */
+  const activeJobs = useMemo(() => jobs.filter((j) => !isJobExpired(j)), [jobs]);
+  const expiredJobs = useMemo(() => jobs.filter((j) => isJobExpired(j)), [jobs]);
+
+  /** Matches title, company, location and the reference code. */
+  const matchesSearch = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return () => true;
+    return (job: Job) =>
+      job.title.toLowerCase().includes(term) ||
+      (job.companyName || '').toLowerCase().includes(term) ||
+      (job.location || '').toLowerCase().includes(term) ||
+      // jobIdentity, not job.refCode: 13 of the existing jobs have no stored
+      // refCode and derive theirs from title + company + category. Searching the
+      // raw field would silently miss every one of them.
+      jobIdentity(job).toLowerCase().includes(term);
+  }, [search]);
+
+  const filteredActive = useMemo(() => activeJobs.filter(matchesSearch), [activeJobs, matchesSearch]);
+  const filteredExpired = useMemo(() => expiredJobs.filter(matchesSearch), [expiredJobs, matchesSearch]);
+  const shownJobs = view === 'active' ? filteredActive : filteredExpired;
+
+  /**
+   * Matches sitting in the tab you are NOT looking at. Without this, searching
+   * "afcat" in Active and finding nothing reads as "it does not exist" when it
+   * is in fact one tab away.
+   */
+  const otherTabMatches = view === 'active' ? filteredExpired.length : filteredActive.length;
 
   // Managers may only delete jobs they created (enforced by Firestore rules too),
   // so anything they cannot delete is not offered for selection.
   const canDelete = (job: Job) => user?.role === 'superadmin' || job.createdBy === user?.uid;
-  const deletableExpired = expiredJobs.filter((j) => j.id && canDelete(j));
+  // Scoped to what is VISIBLE: with a search active, "Delete All Expired" must
+  // not reach past the filter into jobs you cannot see.
+  const deletableExpired = filteredExpired.filter((j) => j.id && canDelete(j));
   const allSelected = deletableExpired.length > 0 && deletableExpired.every((j) => selectedIds.includes(j.id!));
 
   const toggleSelect = (id?: string) => {
@@ -147,19 +205,60 @@ export default function ManageJobs() {
     // Refresh first: matching is done against this list, and a stale list would
     // duplicate a job another admin added since the page loaded.
     if (!showImport) await fetchJobs();
+    setShowExport(false);
     setShowImport((v) => !v);
   };
 
-  const handleExport = () => {
+  // ---------------------------------------------------------------- export
+
+  /** Start of the window, or null for "all time". Filters on createdAt. */
+  const rangeStart = useMemo((): number | null => {
+    const DAY = 24 * 60 * 60 * 1000;
+    if (rangeMode === 'all') return null;
+    if (rangeMode === '7d') return Date.now() - 7 * DAY;
+    if (rangeMode === '30d') return Date.now() - 30 * DAY;
+    if (rangeMode === '90d') return Date.now() - 90 * DAY;
+    return customFrom ? inputToTimestamp(customFrom) : null;
+  }, [rangeMode, customFrom]);
+
+  /** End of the window. Custom "to" covers the whole of its final day. */
+  const rangeEnd = useMemo((): number | null => {
+    if (rangeMode !== 'custom' || !customTo) return null;
+    const ms = inputToTimestamp(customTo);
+    return ms === null ? null : ms + 24 * 60 * 60 * 1000 - 1;
+  }, [rangeMode, customTo]);
+
+  const exportScope = useMemo(() => {
     // Managers get their own jobs — those are the ones they can re-import,
     // since Firestore rules block updating anyone else's.
-    const scope = user?.role === 'superadmin' ? shownJobs : shownJobs.filter((j) => j.createdBy === user?.uid);
-    if (scope.length === 0) { alert('There is nothing to export in this view.'); return; }
-    downloadJobsExport(scope, view);
+    const base = user?.role === 'superadmin' ? shownJobs : shownJobs.filter((j) => j.createdBy === user?.uid);
+    return base.filter((j) => {
+      if (rangeStart !== null && j.createdAt < rangeStart) return false;
+      if (rangeEnd !== null && j.createdAt > rangeEnd) return false;
+      return true;
+    });
+  }, [shownJobs, user, rangeStart, rangeEnd]);
+
+  /** Goes into the filename so successive exports do not overwrite each other. */
+  const rangeLabel = useMemo(() => {
+    if (rangeMode === 'all') return '';
+    if (rangeMode === 'custom') {
+      if (!customFrom && !customTo) return '';
+      return `${customFrom || 'start'}_${customTo || 'now'}`;
+    }
+    return rangeMode;
+  }, [rangeMode, customFrom, customTo]);
+
+  const handleExport = () => {
+    if (exportScope.length === 0) { alert('Nothing matches that range in this view.'); return; }
+    downloadJobsExport(exportScope, view, rangeLabel || undefined);
+    setShowExport(false);
   };
 
+  // ---------------------------------------------------------------- form
+
   const openCreate = () => {
-    setForm({ ...EMPTY_JOB });
+    setForm({ ...EMPTY_JOB, category: activeCategories[0]?.id || '' });
     setEditingId(null);
     setFormKey((k) => k + 1);
     setSectionsKey((k) => k + 1);
@@ -170,6 +269,7 @@ export default function ManageJobs() {
     setForm({
       refCode: job.refCode || '', title: job.title, category: job.category, ageLimit: job.ageLimit,
       notificationDate: job.notificationDate ?? null, applicationStartDate: job.applicationStartDate ?? null, applicationEndDate: job.applicationEndDate ?? null,
+      examDate: job.examDate ?? null,
       educationalQualification: job.educationalQualification, examDetails: job.examDetails || '', studyMaterial: job.studyMaterial || '',
       customSections: job.customSections ? [...job.customSections] : [],
       linkButtons: job.linkButtons ? [...job.linkButtons] : [],
@@ -225,6 +325,7 @@ export default function ManageJobs() {
   const handleSave = async () => {
     if (!user) return;
     if (!form.title.trim()) { alert('Please enter a job title.'); return; }
+    if (!form.category) { alert('Please choose a category.'); return; }
 
     // Identity guard: the same reference must never exist on two jobs. This
     // blocks rather than silently overwriting — in this form you believe you
@@ -274,6 +375,17 @@ export default function ManageJobs() {
         workMode: form.workMode,
         skills: cleanSkills,
       };
+
+      // Worked out BEFORE the write so we can tell you the job has moved tabs.
+      // Editing a job in Expired so that it becomes valid makes it vanish from
+      // the list you are looking at, which reads as a failed save without this.
+      const wasEditing = !!editingId;
+      const existing = editingId ? jobs.find((j) => j.id === editingId) : null;
+      const nowExpired = isJobExpired({
+        ...(payload as unknown as Job),
+        createdAt: existing?.createdAt ?? Date.now(),
+      });
+
       if (editingId) {
         await updateDoc(doc(db, 'jobs', editingId), payload as any);
       } else {
@@ -282,6 +394,12 @@ export default function ManageJobs() {
       clearJobsCache();
       setShowForm(false);
       await fetchJobs();
+
+      if (wasEditing && nowExpired !== (view === 'expired')) {
+        showToast(nowExpired
+          ? 'Saved — this job is now past its date and has moved to Expired.'
+          : 'Saved — this job is live again and has moved to Active.');
+      }
     } catch (e) {
       console.error('Error saving job:', e);
       alert('Failed to save job. Check your permissions.');
@@ -314,7 +432,7 @@ export default function ManageJobs() {
         </div>
         {!showForm && (
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={handleExport} className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 transition">
+            <button onClick={() => { setShowImport(false); setShowExport((v) => !v); }} className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 transition">
               <Download className="w-4 h-4" /> Export
             </button>
             <button onClick={openImport} className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 transition">
@@ -327,13 +445,68 @@ export default function ManageJobs() {
         )}
       </div>
 
+      {/* ---- export panel ---- */}
+      {showExport && !showForm && (
+        <div className="bg-white rounded-2xl border border-zinc-200 shadow-soft p-5 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-heading text-lg font-semibold text-zinc-900">Export Jobs</h2>
+            <button onClick={() => setShowExport(false)} className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition" aria-label="Close export panel">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <p className="text-sm text-zinc-500 mb-3">
+            Filtered by <strong>date added</strong>, from the <strong>{view}</strong> tab.
+            Every job has an added date, so nothing is silently dropped.
+          </p>
+
+          <div className="flex flex-wrap gap-2 mb-3">
+            {(['all', '7d', '30d', '90d', 'custom'] as RangeMode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => setRangeMode(m)}
+                className={`px-3.5 py-2 rounded-lg text-sm font-medium transition ${
+                  rangeMode === m ? 'bg-[#8b2df2] text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:border-[#8b2df2]/40'
+                }`}
+              >
+                {m === 'all' ? 'All time' : m === 'custom' ? 'Custom' : `Last ${m.replace('d', '')} days`}
+              </button>
+            ))}
+          </div>
+
+          {rangeMode === 'custom' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <Field label="From">
+                <input type="date" className={inputCls} value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
+              </Field>
+              <Field label="To">
+                <input type="date" className={inputCls} value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+              </Field>
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={handleExport}
+              disabled={exportScope.length === 0}
+              className="inline-flex items-center gap-2 bg-[#8b2df2] text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:opacity-90 transition disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" /> Download {exportScope.length} job{exportScope.length === 1 ? '' : 's'}
+            </button>
+            {user?.role !== 'superadmin' && (
+              <p className="text-xs text-zinc-400">Only your own jobs are exported — those are the ones you can re-import.</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {showImport && !showForm && user && (
         <JobImportPanel
           existingJobs={jobs}
           uid={user.uid}
           isAdmin={user.role === 'superadmin'}
           onClose={() => setShowImport(false)}
-          onImported={fetchJobs}
+          onImported={() => { fetchJobs(); fetchCategories(); }}
         />
       )}
 
@@ -363,11 +536,17 @@ export default function ManageJobs() {
 
             <div className="sm:max-w-xs">
               <Field label="Category">
-                <select className={inputCls} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value as JobCategory })}>
-                  <option value="government">Government</option>
-                  <option value="corporate">Corporate</option>
-                  <option value="internship">Internship</option>
-                  <option value="exam">Exam</option>
+                <select className={inputCls} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                  {!form.category && <option value="">— Choose —</option>}
+                  {activeCategories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.label}</option>
+                  ))}
+                  {/* An existing job may sit in a category that has since been
+                      disabled. Keep it selectable so editing anything else about
+                      the job does not silently reassign it. */}
+                  {form.category && !activeCategories.some((c) => c.id === form.category) && (
+                    <option value={form.category}>{labelForCategory(categories, form.category)} (disabled)</option>
+                  )}
                 </select>
               </Field>
             </div>
@@ -416,16 +595,40 @@ export default function ManageJobs() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2 border-t border-zinc-100">
-              <Field label="Notification Date">
-                <input type="date" className={inputCls} value={dateToInput(form.notificationDate)} onChange={(e) => setForm({ ...form, notificationDate: inputToTimestamp(e.target.value) })} />
-              </Field>
-              <Field label="Application Start">
-                <input type="date" className={inputCls} value={dateToInput(form.applicationStartDate)} onChange={(e) => setForm({ ...form, applicationStartDate: inputToTimestamp(e.target.value) })} />
-              </Field>
-              <Field label="Application End">
-                <input type="date" className={inputCls} value={dateToInput(form.applicationEndDate)} onChange={(e) => setForm({ ...form, applicationEndDate: inputToTimestamp(e.target.value) })} />
-              </Field>
+            <div className="pt-2 border-t border-zinc-100">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <Field label="Notification Date">
+                  <input type="date" className={inputCls} value={dateToInput(form.notificationDate)} onChange={(e) => setForm({ ...form, notificationDate: inputToTimestamp(e.target.value) })} />
+                </Field>
+                <Field label="Application Start">
+                  <input type="date" className={inputCls} value={dateToInput(form.applicationStartDate)} onChange={(e) => setForm({ ...form, applicationStartDate: inputToTimestamp(e.target.value) })} />
+                </Field>
+                <Field label="Application End">
+                  <input type="date" className={inputCls} value={dateToInput(form.applicationEndDate)} onChange={(e) => setForm({ ...form, applicationEndDate: inputToTimestamp(e.target.value) })} />
+                </Field>
+                <Field label="Exam Date (optional)">
+                  <input type="date" className={inputCls} value={dateToInput(form.examDate)} onChange={(e) => setForm({ ...form, examDate: inputToTimestamp(e.target.value) })} />
+                </Field>
+              </div>
+
+              <div className="mt-3 rounded-xl bg-zinc-50 border border-zinc-200 p-3 text-xs text-zinc-600 leading-relaxed">
+                <strong className="text-zinc-800">How long this listing stays live:</strong>{' '}
+                {form.examDate
+                  ? <>until the <strong>exam date</strong> ({formatDate(form.examDate)}), even after applications close. The application end date is still shown to users exactly as entered.</>
+                  : form.applicationEndDate
+                    ? <>until the <strong>application end date</strong> ({formatDate(form.applicationEndDate)}). Add an exam date to keep it live past that.</>
+                    : <>no dates set — it will expire 30 days after being added.</>}
+                <br />
+                For a multi-stage exam, enter the <strong>last</strong> stage you know of.
+                Leave it blank if the date has not been announced.
+              </div>
+
+              {form.examDate !== null && form.examDate + 24 * 60 * 60 * 1000 <= Date.now() && (
+                <div className="mt-2 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  That exam date has already passed, so this job will move straight to Expired. Check the year if that was not intended.
+                </div>
+              )}
             </div>
 
             <Field label="Educational Qualification">
@@ -445,7 +648,7 @@ export default function ManageJobs() {
                   key={`${formKey}-exam`}
                   value={form.examDetails}
                   onChange={(html) => setForm((f) => ({ ...f, examDetails: html }))}
-                  placeholder="Exam pattern, syllabus, dates..."
+                  placeholder="Exam pattern, syllabus, marks, duration..."
                   minHeight={150}
                 />
               </Field>
@@ -494,7 +697,7 @@ export default function ManageJobs() {
                 <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Link Buttons</p>
                 <button onClick={addButton} className="inline-flex items-center gap-1 text-sm font-medium text-[#8b2df2] hover:underline"><Plus className="w-4 h-4" /> Add Button</button>
               </div>
-              <p className="text-xs text-zinc-400 mb-3">Informational links shown on the details page for subscribers (e.g. "Official Notification", "Official Website").</p>
+              <p className="text-xs text-zinc-400 mb-3">Informational links shown on the details page for subscribers (e.g. "Official Notification", "Official Website"). Put only the URL in the link field — pasting the label and URL together makes the button disappear.</p>
               <div className="space-y-3">
                 {form.linkButtons.map((btn, i) => (
                   <div key={i} className="bg-zinc-50 rounded-xl p-3 border border-zinc-100 space-y-2">
@@ -547,13 +750,29 @@ export default function ManageJobs() {
         </div>
       ) : (
         <>
+          {/* Search */}
+          <div className="relative mb-4">
+            <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setSelectedIds([]); }}
+              placeholder="Search by title, company, location or reference code..."
+              className="w-full pl-9 pr-9 py-2.5 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30 focus:border-[#8b2df2] bg-white"
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-700" aria-label="Clear search">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
           <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
             <div className="inline-flex bg-white rounded-xl p-1 shadow-soft">
               <button onClick={() => switchView('active')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'active' ? 'bg-[#8b2df2] text-white' : 'text-zinc-600 hover:bg-zinc-100'}`}>
-                Active ({activeJobs.length})
+                Active ({search ? filteredActive.length : activeJobs.length})
               </button>
               <button onClick={() => switchView('expired')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'expired' ? 'bg-[#8b2df2] text-white' : 'text-zinc-600 hover:bg-zinc-100'}`}>
-                Expired ({expiredJobs.length})
+                Expired ({search ? filteredExpired.length : expiredJobs.length})
               </button>
             </div>
             {view === 'expired' && deletableExpired.length > 0 && (
@@ -568,16 +787,32 @@ export default function ManageJobs() {
                   </button>
                 )}
                 <button onClick={handleBulkDeleteExpired} disabled={bulkDeleting} className="inline-flex items-center gap-2 border-2 border-red-200 text-red-600 rounded-xl px-4 py-2 text-sm font-semibold hover:bg-red-50 transition disabled:opacity-50">
-                  Delete All Expired
+                  Delete All{search ? ' Shown' : ' Expired'}
                 </button>
               </div>
             )}
           </div>
 
+          {/* Matches in the tab you are not looking at. */}
+          {search.trim() && otherTabMatches > 0 && (
+            <div className="mb-4 text-sm text-zinc-500">
+              {otherTabMatches} more match{otherTabMatches === 1 ? '' : 'es'} in{' '}
+              <button
+                onClick={() => switchView(view === 'active' ? 'expired' : 'active')}
+                className="font-semibold text-[#8b2df2] hover:underline"
+              >
+                {view === 'active' ? 'Expired' : 'Active'}
+              </button>
+            </div>
+          )}
+
           {view === 'expired' && expiredJobs.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-center gap-2 text-sm text-amber-800">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              These jobs are past their deadline (or 30+ days old with no deadline). Users still see them until you delete them.
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-2 text-sm text-amber-800">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                Past their exam date, or their application deadline where no exam date is set (or 30+ days old with no dates).
+                Users still see them until you delete them — and a postponed exam can be brought back to Active just by editing its date.
+              </span>
             </div>
           )}
 
@@ -586,38 +821,70 @@ export default function ManageJobs() {
           ) : shownJobs.length === 0 ? (
             <div className="bg-white rounded-2xl shadow-soft p-12 text-center">
               <Briefcase className="w-10 h-10 text-zinc-300 mx-auto mb-3" />
-              <p className="text-zinc-500">{view === 'active' ? 'No active jobs. Click "New Job" to create one.' : 'No expired jobs. Your listings are all current.'}</p>
+              <p className="text-zinc-500">
+                {search.trim()
+                  ? 'No jobs here match that search.'
+                  : view === 'active' ? 'No active jobs. Click "New Job" to create one.' : 'No expired jobs. Your listings are all current.'}
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
-              {shownJobs.map((job) => (
-                <div key={job.id} className={`bg-white rounded-2xl shadow-soft p-4 sm:p-5 flex items-start justify-between gap-4 ${job.id && selectedIds.includes(job.id) ? 'ring-2 ring-red-300' : ''}`}>
-                  {view === 'expired' && canDelete(job) && (
-                    <input
-                      type="checkbox"
-                      checked={!!job.id && selectedIds.includes(job.id)}
-                      onChange={() => toggleSelect(job.id)}
-                      className="mt-1 rounded shrink-0"
-                      aria-label={`Select ${job.title}`}
-                    />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${categoryBadgeClass(job.category)}`}>{categoryLabel(job.category)}</span>
-                      <span className="text-xs text-zinc-400">Ends: {formatDate(job.applicationEndDate) || '—'}</span>
+              {shownJobs.map((job) => {
+                const stage = getJobStage(job);
+                return (
+                  <div key={job.id} className={`bg-white rounded-2xl shadow-soft p-4 sm:p-5 flex items-start justify-between gap-4 ${job.id && selectedIds.includes(job.id) ? 'ring-2 ring-red-300' : ''}`}>
+                    {view === 'expired' && canDelete(job) && (
+                      <input
+                        type="checkbox"
+                        checked={!!job.id && selectedIds.includes(job.id)}
+                        onChange={() => toggleSelect(job.id)}
+                        className="mt-1 rounded shrink-0"
+                        aria-label={`Select ${job.title}`}
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span
+                          className="text-xs font-medium px-2 py-0.5 rounded-full border"
+                          style={categoryBadgeStyle(colorForCategory(categories, job.category))}
+                        >
+                          {labelForCategory(categories, job.category)}
+                        </span>
+                        {/* Shows WHICH date is governing this job's life, so the
+                            tab it sits in is never a mystery. */}
+                        {job.examDate ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-zinc-400">
+                            <CalendarCheck className="w-3 h-3" /> Exam: {formatDate(job.examDate)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-zinc-400">Ends: {formatDate(job.applicationEndDate) || '—'}</span>
+                        )}
+                        {stage.label && (
+                          <span className={`text-xs ${STAGE_TEXT_CLASS[stage.tone]}`}>· {stage.label}</span>
+                        )}
+                      </div>
+                      <h3 className="font-semibold text-zinc-900 truncate">{job.title}</h3>
+                      <p className="text-xs text-zinc-400 mt-1">Added {formatDate(job.createdAt)}</p>
                     </div>
-                    <h3 className="font-semibold text-zinc-900 truncate">{job.title}</h3>
-                    <p className="text-xs text-zinc-400 mt-1">Added {formatDate(job.createdAt)}</p>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {/* Edit is now offered in BOTH tabs. A postponed exam sits
+                          in Expired, and updating its date is exactly how you
+                          bring it back — it re-buckets itself on the next load. */}
+                      {canDelete(job) && <button onClick={() => openEdit(job)} className="p-2 text-zinc-400 hover:text-[#8b2df2]" title="Edit"><Pencil className="w-4 h-4" /></button>}
+                      {canDelete(job) && <button onClick={() => handleDelete(job.id)} className="p-2 text-zinc-400 hover:text-red-600" title="Delete"><Trash2 className="w-4 h-4" /></button>}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {view === 'active' && canDelete(job) && <button onClick={() => openEdit(job)} className="p-2 text-zinc-400 hover:text-[#8b2df2]"><Pencil className="w-4 h-4" /></button>}
-                    {canDelete(job) && <button onClick={() => handleDelete(job.id)} className="p-2 text-zinc-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-md text-center px-5 py-3 rounded-xl shadow-lg text-sm font-medium z-50 bg-zinc-900 text-white">
+          {toast}
+        </div>
       )}
     </div>
   );

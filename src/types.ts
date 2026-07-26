@@ -1,8 +1,45 @@
 export type Role = 'superadmin' | 'manager' | 'user';
 
-export type JobCategory = 'government' | 'corporate' | 'internship' | 'exam';
+/**
+ * A category id.
+ *
+ * This used to be a fixed union of four literals. Categories are now managed
+ * from the admin panel, so the id is whatever the Firestore document is called
+ * in the `categories` collection. The four built-ins keep their original ids
+ * ('government', 'corporate', 'internship', 'exam') so every existing job
+ * continues to resolve without migration.
+ *
+ * The id is STABLE and is what a job stores. The display name lives on the
+ * category document and can be renamed freely without touching any job — the
+ * same discipline PlanTier.id uses for billing periods.
+ */
+export type JobCategory = string;
 
 export type WorkMode = 'onsite' | 'hybrid' | 'remote';
+
+/**
+ * One selectable job category, managed from Admin -> Categories.
+ *
+ * `color` is a hex string rather than a Tailwind class because Tailwind v4
+ * only ships classes it can see in the source at build time — a class name
+ * assembled at runtime from Firestore would silently render unstyled. Badges
+ * therefore use inline styles, exactly like JobLinkButton and SocialLink.
+ */
+export interface Category {
+  /** Firestore document id. This is the value stored on Job.category. Never changes. */
+  id?: string;
+  /** Display name. Safe to rename at any time. */
+  label: string;
+  /** Badge colour as a hex string, e.g. '#10b981'. */
+  color: string;
+  /** Sort position in the job form and the dashboard filter. */
+  order?: number;
+  /**
+   * Inactive categories are hidden from the job form so nothing new lands in
+   * them, but jobs already using them keep working and stay filterable.
+   */
+  active: boolean;
+}
 
 export interface UserProfile {
   uid: string;
@@ -43,6 +80,20 @@ export interface Job {
   notificationDate: number | null;
   applicationStartDate: number | null;
   applicationEndDate: number | null;
+  /**
+   * The date of the exam itself, for recruitment decided by an exam.
+   *
+   * When set, this — not applicationEndDate — decides how long the listing
+   * stays live, so a posting whose application window has closed remains
+   * visible until the exam is over. Both dates are still displayed truthfully:
+   * the card shows "Applications closed - Exam 8 Aug" rather than pretending
+   * the application deadline moved.
+   *
+   * For a multi-stage exam this holds the LAST known stage, so the listing
+   * survives until the whole process is done. Leave it null when there is no
+   * exam, or when the date has not been announced yet.
+   */
+  examDate?: number | null;
   educationalQualification: string;
   examDetails?: string;
   studyMaterial?: string;

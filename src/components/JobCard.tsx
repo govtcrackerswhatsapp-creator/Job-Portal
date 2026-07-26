@@ -1,7 +1,9 @@
 import { useNavigate } from 'react-router-dom';
-import { Job, UserProfile } from '../types';
+import { Job, UserProfile, Category } from '../types';
 import { hasPortalAccess } from '../lib/access';
-import { categoryLabel, workModeLabel, formatDate } from '../lib/format';
+import { workModeLabel, formatDate } from '../lib/format';
+import { labelForCategory } from '../lib/categoriesData';
+import { getJobStage, STAGE_TEXT_CLASS } from '../lib/jobStage';
 import { MapPin, Briefcase, IndianRupee, BadgeCheck, Bookmark, BookmarkCheck, ArrowRight, Loader2, Calendar, Clock } from 'lucide-react';
 
 // Rotating color themes for cards (by index), matching the reference design.
@@ -29,14 +31,33 @@ interface JobCardProps {
   isSaved: boolean;
   onToggleSave: (jobId: string) => void;
   savingId: string | null;
+  /**
+   * Optional so callers that have not loaded categories still render. When it
+   * is missing, labelForCategory prettifies the stored id ('government' ->
+   * 'Government'), which is correct for every built-in and only diverges once
+   * a category has been renamed to something unlike its id.
+   */
+  categories?: Category[];
 }
 
-export default function JobCard({ job, index, user, isSaved, onToggleSave, savingId }: JobCardProps) {
+export default function JobCard({ job, index, user, isSaved, onToggleSave, savingId, categories = [] }: JobCardProps) {
   const navigate = useNavigate();
   const theme = THEMES[index % THEMES.length];
   const company = (job.companyName || '').trim();
   const skills = (job.skills || []).filter((s) => s.trim());
   const wm = workModeLabel(job.workMode);
+
+  /**
+   * Where this listing sits on its own timeline.
+   *
+   * PUBLIC ON PURPOSE — this line is shown to free users, not just subscribers.
+   * A card reading "Last date: 30 Jun" on a job whose exam is still six weeks
+   * away looks dead, and a free user bounces. "Applications closed - Exam 8
+   * Aug" reads as still worth paying for. The date is the hook; the exam
+   * pattern, study material and official links behind the paywall are the
+   * product.
+   */
+  const stage = getJobStage(job);
 
   // Clicking the card / View Details: paid users -> details, free users -> subscribe.
   const openJob = () => {
@@ -49,7 +70,7 @@ export default function JobCard({ job, index, user, isSaved, onToggleSave, savin
       {/* Top row: category + save */}
       <div className="flex items-start justify-between mb-3">
         <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-white/80 backdrop-blur" style={{ color: theme.ring }}>
-          {categoryLabel(job.category)}
+          {labelForCategory(categories, job.category)}
         </span>
         <button
           onClick={() => onToggleSave(job.id || '')}
@@ -115,10 +136,11 @@ export default function JobCard({ job, index, user, isSaved, onToggleSave, savin
         </div>
       )}
 
-      {/* Last date (if present) */}
-      {job.applicationEndDate && (
-        <div className="inline-flex items-center gap-1 text-xs text-zinc-400 mb-3">
-          <Calendar className="w-3.5 h-3.5 shrink-0" /> Last date: {formatDate(job.applicationEndDate)}
+      {/* Stage. Replaces the old bare "Last date: X" line, which said nothing
+          about what the date MEANT and so read as dead once it had passed. */}
+      {stage.label && (
+        <div className={`inline-flex items-center gap-1 text-xs mb-3 ${STAGE_TEXT_CLASS[stage.tone]} ${stage.tone === 'urgent' ? 'font-semibold' : ''}`}>
+          <Calendar className="w-3.5 h-3.5 shrink-0" /> {stage.label}
         </div>
       )}
 

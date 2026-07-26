@@ -1,4 +1,4 @@
-import { Job, JobCategory, JobSection, JobLinkButton, WorkMode } from '../types';
+import { Job, JobSection, JobLinkButton, WorkMode } from '../types';
 import { sanitizeHtml, isEmptyHtml, safeUrl } from './richText';
 import { dateInputToTimestamp, timestampToDateInput } from './format';
 
@@ -11,11 +11,15 @@ import { dateInputToTimestamp, timestampToDateInput } from './format';
  * Every value here goes through the SAME helpers the manual job form uses
  * (sanitizeHtml / isEmptyHtml / dateInputToTimestamp / safeUrl), so an
  * imported job is byte-identical to one typed into the form.
+ *
+ * CHANGED: the hardcoded CATEGORIES list is gone. Categories are editable
+ * documents now, so the valid ids arrive as a parameter (PlanOptions.categoryIds)
+ * rather than being baked in here. That keeps this module free of Firestore —
+ * the panel loads the list and passes it down.
  */
 
 export const MAX_IMPORT_ROWS = 200;
 
-export const CATEGORIES: JobCategory[] = ['government', 'corporate', 'internship', 'exam'];
 export const WORK_MODES: WorkMode[] = ['onsite', 'hybrid', 'remote'];
 
 export const DEFAULT_BTN_BG = '#8b2df2';
@@ -25,7 +29,7 @@ export const DEFAULT_BTN_FG = '#ffffff';
 export const KNOWN_FIELDS = [
   'refCode', 'title', 'category', 'companyName', 'companyLogo', 'location',
   'salary', 'experience', 'workMode', 'skills',
-  'notificationDate', 'applicationStartDate', 'applicationEndDate',
+  'notificationDate', 'applicationStartDate', 'applicationEndDate', 'examDate',
   'ageLimit', 'educationalQualification', 'examDetails', 'studyMaterial',
   'customSections', 'linkButtons',
 ] as const;
@@ -35,7 +39,15 @@ export type KnownField = (typeof KNOWN_FIELDS)[number];
 export const IGNORED_FIELDS = ['id', 'createdAt', 'createdBy'];
 
 const RICH_FIELDS: KnownField[] = ['ageLimit', 'educationalQualification', 'examDetails', 'studyMaterial'];
-const DATE_FIELDS: KnownField[] = ['notificationDate', 'applicationStartDate', 'applicationEndDate'];
+
+/**
+ * examDate joins this list, which gets it three behaviours for free: it is
+ * parsed as YYYY-MM-DD, it defaults to null rather than '' in replace mode,
+ * and it renders as a readable date in the diff preview instead of a raw
+ * millisecond number.
+ */
+const DATE_FIELDS: KnownField[] = ['notificationDate', 'applicationStartDate', 'applicationEndDate', 'examDate'];
+
 const TEXT_FIELDS: KnownField[] = ['companyName', 'companyLogo', 'location', 'salary', 'experience'];
 
 // ---------------------------------------------------------------- types
@@ -301,7 +313,17 @@ function parseButtons(v: unknown): { value: JobLinkButton[]; errors: string[]; w
 
 // ---------------------------------------------------------------- normalise
 
-export function normaliseRow(raw: Record<string, unknown>, index: number): NormalisedRow {
+/**
+ * @param categoryIds Valid category ids, from the categories collection. When
+ *   omitted or empty the category is accepted with a warning rather than
+ *   rejected — a failed category load must not make every row in the file
+ *   invalid.
+ */
+export function normaliseRow(
+  raw: Record<string, unknown>,
+  index: number,
+  categoryIds?: string[],
+): NormalisedRow {
   const errors: RowIssue[] = [];
   const warnings: RowIssue[] = [];
   const present = new Set<KnownField>();
@@ -325,13 +347,23 @@ export function normaliseRow(raw: Record<string, unknown>, index: number): Norma
   if (has('category')) {
     const c = asString(raw.category).trim().toLowerCase();
     if (c) {
-      if ((CATEGORIES as string[]).indexOf(c) !== -1) {
+      const haveList = Array.isArray(categoryIds) && categoryIds.length > 0;
+      if (!haveList) {
+        // Fail open: rejecting every row because the list could not be read
+        // would be worse than accepting a possibly-wrong id.
         present.add('category');
-        values.category = c as JobCategory;
+        values.category = c;
+        warnings.push({
+          field: 'category',
+          message: 'Category list unavailable — "' + c + '" was accepted without checking.',
+        });
+      } else if (categoryIds.indexOf(c) !== -1) {
+        present.add('category');
+        values.category = c;
       } else {
         errors.push({
           field: 'category',
-          message: 'category "' + asString(raw.category) + '" is not valid. Use one of: ' + CATEGORIES.join(', ') + '.',
+          message: 'category "' + asString(raw.category) + '" is not valid. Use one of: ' + categoryIds.join(', ') + '.',
         });
       }
     }
@@ -376,6 +408,19 @@ export function normaliseRow(raw: Record<string, unknown>, index: number): Norma
     present.add(f);
     bag[f] = r.value;
   });
+
+  // A past exam date silently expires the listing the moment it imports, so
+  // flag it here. Deliberately a warning, not an error: back-filling a
+  // finished exam onto an old job is a legitimate thing to do.
+  if (present.has('examDate') && typeof values.examDate === 'number') {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    if (values.examDate + DAY_MS <= Date.now()) {
+      warnings.push({
+        field: 'examDate',
+        message: 'examDate is in the past — this job will import as expired. Check the year if that was not intended.',
+      });
+    }
+  }
 
   if (has('skills')) {
     const r = parseSkills(raw.skills);
@@ -513,6 +558,13 @@ export interface PlanOptions {
   uid: string;
   isAdmin: boolean;
   replaceMode: boolean;
+  /**
+   * Valid category ids. Supplied by JobImportPanel from categoriesData, which
+   * never returns an empty list — it falls back to the four built-ins. Optional
+   * here so an omitted list degrades to "accept with a warning" rather than
+   * failing every row.
+   */
+  categoryIds?: string[];
 }
 
 export function planImport(
@@ -521,7 +573,7 @@ export function planImport(
   opts: PlanOptions,
 ): ImportPlan {
   const rows: PlannedRow[] = rawRows.map((r, i) => {
-    const n = normaliseRow(r, i + 1);
+    const n = normaliseRow(r, i + 1, opts.categoryIds);
     return { ...n, action: 'create' as RowAction, diffs: [] as FieldDiff[] };
   });
 
@@ -614,13 +666,24 @@ export function planImport(
 
 // ---------------------------------------------------------------- payloads
 
-/** A brand new job document. All required fields are always present. */
-export function buildCreatePayload(row: PlannedRow, uid: string): Record<string, unknown> {
+/**
+ * A brand new job document. All required fields are always present.
+ *
+ * @param fallbackCategory Used only if the row somehow reaches here with no
+ *   category. planImport already rejects such rows, so this is defensive. It
+ *   is a PARAMETER rather than a hardcoded 'government' because that id can
+ *   now be renamed or disabled — the caller passes the first active category.
+ */
+export function buildCreatePayload(
+  row: PlannedRow,
+  uid: string,
+  fallbackCategory = '',
+): Record<string, unknown> {
   const v = row.values;
   return {
     refCode: row.refCode,
     title: v.title || '',
-    category: (v.category || 'government') as JobCategory,
+    category: v.category || fallbackCategory,
     ageLimit: v.ageLimit ?? '',
     educationalQualification: v.educationalQualification ?? '',
     examDetails: v.examDetails ?? '',
@@ -628,6 +691,7 @@ export function buildCreatePayload(row: PlannedRow, uid: string): Record<string,
     notificationDate: v.notificationDate ?? null,
     applicationStartDate: v.applicationStartDate ?? null,
     applicationEndDate: v.applicationEndDate ?? null,
+    examDate: v.examDate ?? null,
     customSections: v.customSections ?? [],
     linkButtons: v.linkButtons ?? [],
     companyName: v.companyName ?? '',
@@ -647,9 +711,13 @@ export function buildCreatePayload(row: PlannedRow, uid: string): Record<string,
  * its stored value. Replace mode: the full document.
  * createdAt / createdBy / id are never written on update.
  */
-export function buildUpdatePayload(row: PlannedRow, replaceMode: boolean): Record<string, unknown> {
+export function buildUpdatePayload(
+  row: PlannedRow,
+  replaceMode: boolean,
+  fallbackCategory = '',
+): Record<string, unknown> {
   if (replaceMode) {
-    const full = buildCreatePayload(row, '');
+    const full = buildCreatePayload(row, '', fallbackCategory);
     delete full.createdAt;
     delete full.createdBy;
     return full;

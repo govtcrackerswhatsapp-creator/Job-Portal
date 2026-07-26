@@ -3,10 +3,12 @@ import { useParams, Link, useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { hasPortalAccess } from '../lib/access';
 import { getJob } from '../lib/jobsData';
-import { Job } from '../types';
-import { categoryBadgeClass, categoryLabel, workModeLabel, formatDate } from '../lib/format';
+import { getCategories, labelForCategory, colorForCategory } from '../lib/categoriesData';
+import { Job, Category } from '../types';
+import { categoryBadgeStyle, workModeLabel, formatDate } from '../lib/format';
+import { getJobStage, STAGE_TEXT_CLASS } from '../lib/jobStage';
 import { FormattedText, isEmptyHtml, safeUrl } from '../lib/richText';
-import { ArrowLeft, Calendar, GraduationCap, Users, Loader2, FileText, BookOpen, ExternalLink, MapPin, Briefcase, IndianRupee, BadgeCheck, Code2, Info, Building2 } from 'lucide-react';
+import { ArrowLeft, Calendar, GraduationCap, Users, Loader2, FileText, BookOpen, ExternalLink, MapPin, Briefcase, IndianRupee, BadgeCheck, Code2, Info, Building2, CalendarCheck } from 'lucide-react';
 
 function initials(name: string): string {
   const t = name.trim();
@@ -54,6 +56,7 @@ export default function JobDetails() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [job, setJob] = useState<Job | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -68,7 +71,9 @@ export default function JobDetails() {
     if (!id) return;
     try {
       setLoading(true);
-      const j = await getJob(id);
+      // Both cached and independent, so fetch together.
+      const [j, cats] = await Promise.all([getJob(id), getCategories()]);
+      setCategories(cats);
       if (j) setJob(j);
       else setNotFound(true);
     } catch (e) {
@@ -100,6 +105,13 @@ export default function JobDetails() {
   const company = (job.companyName || '').trim();
   const skills = (job.skills || []).filter((s) => s.trim());
   const wm = workModeLabel(job.workMode);
+
+  /**
+   * Where this listing sits on its own timeline. The same helper the card and
+   * the Active/Expired tabs use, so all three can never disagree.
+   */
+  const stage = getJobStage(job);
+
   // Button URLs go through the same allow-list as links inside rich text.
   // Without this a protocol-less "www.ssc.nic.in" resolves as a RELATIVE path
   // (so the button 404s) and a javascript: URL would render as a live link.
@@ -107,7 +119,7 @@ export default function JobDetails() {
     .map((b) => ({ ...b, url: safeUrl(b.url || '') }))
     .filter((b) => b.text?.trim() && !!b.url) as { text: string; url: string; bgColor: string; textColor: string }[];
   const customSections = (job.customSections || []).filter((s) => s.title?.trim() || !isEmptyHtml(s.content));
-  const hasSummary = !!(job.experience || job.salary || job.location || wm || job.applicationEndDate) || !isEmptyHtml(job.ageLimit);
+  const hasSummary = !!(job.experience || job.salary || job.location || wm || job.applicationEndDate || job.examDate) || !isEmptyHtml(job.ageLimit);
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto">
@@ -128,7 +140,21 @@ export default function JobDetails() {
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${categoryBadgeClass(job.category)}`}>{categoryLabel(job.category)}</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Inline styles, not Tailwind classes: the colour comes from
+                  Firestore and Tailwind cannot generate classes at runtime. */}
+              <span
+                className="text-xs font-medium px-2 py-0.5 rounded-full border"
+                style={categoryBadgeStyle(colorForCategory(categories, job.category))}
+              >
+                {labelForCategory(categories, job.category)}
+              </span>
+              {stage.label && (
+                <span className={`text-xs font-medium ${STAGE_TEXT_CLASS[stage.tone]}`}>
+                  {stage.label}
+                </span>
+              )}
+            </div>
             <h1 className="font-heading text-2xl md:text-3xl font-bold text-zinc-900 mt-2">{job.title}</h1>
             {company && (
               <div className="flex items-center gap-1 mt-1">
@@ -149,6 +175,25 @@ export default function JobDetails() {
         </div>
       </div>
 
+      {/* Applications closed but the exam is still ahead — the case examDate
+          exists for. Stated plainly at the top so nobody has to work it out by
+          comparing two dates further down the page. */}
+      {stage.kind === 'exam-ahead' && job.applicationEndDate && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4 flex items-start gap-3">
+          <CalendarCheck className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-amber-900">
+              Applications closed on {formatDate(job.applicationEndDate)}
+            </p>
+            {job.examDate && (
+              <p className="text-sm text-amber-800 mt-0.5">
+                The exam is scheduled for {formatDate(job.examDate)}. Details below remain available for preparation.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Main column */}
         <div className="xl:col-span-2 space-y-4">
@@ -159,6 +204,9 @@ export default function JobDetails() {
               <SummaryItem icon={Calendar} label="Notification Date" value={formatDate(job.notificationDate)} />
               <SummaryItem icon={Calendar} label="Application Start" value={formatDate(job.applicationStartDate)} />
               <SummaryItem icon={Calendar} label="Last Date to Apply" value={formatDate(job.applicationEndDate)} />
+              {/* Distinct icon so the exam date is not mistaken for another
+                  application deadline at a glance. */}
+              <SummaryItem icon={CalendarCheck} label="Exam Date" value={formatDate(job.examDate)} />
             </div>
             {(!isEmptyHtml(job.ageLimit) || !isEmptyHtml(job.educationalQualification)) && (
               <div className="space-y-5 mt-5 pt-5 border-t border-zinc-100">
@@ -222,6 +270,7 @@ export default function JobDetails() {
               <SummaryItem icon={Building2} label="Work Mode" value={wm} />
               <RichItem icon={Users} label="Age Limit" value={job.ageLimit} />
               <SummaryItem icon={Calendar} label="Last Date" value={formatDate(job.applicationEndDate)} />
+              <SummaryItem icon={CalendarCheck} label="Exam Date" value={formatDate(job.examDate)} />
               {!hasSummary && (
                 <p className="text-sm text-zinc-400">No summary details added.</p>
               )}

@@ -3,20 +3,21 @@ import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { getJobs } from '../lib/jobsData';
-import { Job, JobCategory } from '../types';
-import { categoryLabel } from '../lib/format';
+import { getCategories } from '../lib/categoriesData';
+import { Job, Category } from '../types';
 import JobCard from '../components/JobCard';
-import { Search, Loader2, Briefcase } from 'lucide-react';
-
-const CATEGORIES: (JobCategory | 'all')[] = ['all', 'government', 'corporate', 'internship', 'exam'];
+import CategoryFilter from '../components/CategoryFilter';
+import { Search, Loader2, Briefcase, X } from 'lucide-react';
 
 export default function Dashboard() {
   const { user } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<JobCategory | 'all'>('all');
+  /** Empty means every category. There is no 'all' entry — see CategoryFilter. */
+  const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -27,8 +28,17 @@ export default function Dashboard() {
   const load = async () => {
     try {
       setLoading(true);
-      const list = await getJobs(); // cached
+      // Both are cached, and independent of each other, so run them together.
+      const [list, cats] = await Promise.all([getJobs(), getCategories()]);
       setJobs(list);
+
+      /**
+       * ALL categories, including disabled ones — not getActiveCategories().
+       * Disabling a category stops NEW jobs landing in it; the jobs already
+       * there must stay findable. Filtering the list here would strand them
+       * where only "everything" reaches them.
+       */
+      setCategories(cats);
 
       if (user) {
         const cartSnap = await getDoc(doc(db, 'carts', user.uid));
@@ -57,9 +67,16 @@ export default function Dashboard() {
     }
   };
 
+  /** Job count per category id, shown beside each row in the filter. */
+  const categoryCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    jobs.forEach((j) => { m[j.category] = (m[j.category] || 0) + 1; });
+    return m;
+  }, [jobs]);
+
   const visibleJobs = useMemo(() => {
     return jobs.filter((job) => {
-      const matchCat = filter === 'all' || job.category === filter;
+      const matchCat = selectedCats.length === 0 || selectedCats.indexOf(job.category) !== -1;
       const term = search.trim().toLowerCase();
       const matchSearch = !term ||
         job.title.toLowerCase().includes(term) ||
@@ -68,7 +85,9 @@ export default function Dashboard() {
         (job.skills || []).some((s) => s.toLowerCase().includes(term));
       return matchCat && matchSearch;
     });
-  }, [jobs, filter, search]);
+  }, [jobs, selectedCats, search]);
+
+  const filtering = selectedCats.length > 0 || search.trim().length > 0;
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto">
@@ -78,43 +97,69 @@ export default function Dashboard() {
         <p className="text-zinc-500 mt-1">Browse the newest notifications. Tap a job for full details.</p>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-3 mb-6">
+      {/* Search + category filter. The old horizontal chip row is gone: it ran
+          out of width as soon as categories became editable, and a scrolling
+          strip of eight chips is worse than one control that says what it is
+          filtering. */}
+      <div className="flex flex-col lg:flex-row gap-3 mb-4">
         <div className="relative flex-1 min-w-0">
           <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by title, company, location, skill..."
-            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30 focus:border-[#8b2df2] bg-white"
+            className="w-full pl-9 pr-9 py-2.5 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#8b2df2]/30 focus:border-[#8b2df2] bg-white"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-700"
+              aria-label="Clear search"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        <div className="shrink-0">
+          <CategoryFilter
+            categories={categories}
+            selected={selectedCats}
+            onChange={setSelectedCats}
+            counts={categoryCounts}
           />
         </div>
-        {/* Category chips. On mobile this is one swipeable row that runs edge to
-            edge with no visible scrollbar, and a soft fade on the right hinting
-            there is more to scroll. From lg: up it sits inline next to the search. */}
-        <div className="relative min-w-0 -mx-4 sm:mx-0">
-          <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 sm:px-0">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setFilter(cat)}
-                className={`shrink-0 px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition ${
-                  filter === cat ? 'bg-[#8b2df2] text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:border-[#8b2df2]/40'
-                }`}
-              >
-                {cat === 'all' ? 'All' : categoryLabel(cat)}
-              </button>
-            ))}
-          </div>
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[#f5f5f7] to-transparent" />
-        </div>
       </div>
+
+      {/* Result count, only while something is actually filtering. Without it a
+          multi-select filter makes a short list look like a broken page. */}
+      {!loading && filtering && (
+        <div className="flex items-center gap-3 mb-4 flex-wrap">
+          <p className="text-sm text-zinc-500">
+            {visibleJobs.length} of {jobs.length} job{jobs.length === 1 ? '' : 's'}
+          </p>
+          <button
+            onClick={() => { setSelectedCats([]); setSearch(''); }}
+            className="text-sm font-medium text-[#8b2df2] hover:underline"
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 text-[#8b2df2] animate-spin" /></div>
       ) : visibleJobs.length === 0 ? (
         <div className="bg-white rounded-2xl shadow-soft p-12 text-center">
           <Briefcase className="w-10 h-10 text-zinc-300 mx-auto mb-3" />
-          <p className="text-zinc-500">{jobs.length === 0 ? 'No jobs posted yet. Check back soon!' : 'No jobs match your filters.'}</p>
+          <p className="text-zinc-500 mb-4">{jobs.length === 0 ? 'No jobs posted yet. Check back soon!' : 'No jobs match your filters.'}</p>
+          {jobs.length > 0 && filtering && (
+            <button
+              onClick={() => { setSelectedCats([]); setSearch(''); }}
+              className="text-[#8b2df2] font-medium hover:underline"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -127,6 +172,7 @@ export default function Dashboard() {
               isSaved={savedIds.includes(job.id || '')}
               onToggleSave={toggleSave}
               savingId={savingId}
+              categories={categories}
             />
           ))}
         </div>

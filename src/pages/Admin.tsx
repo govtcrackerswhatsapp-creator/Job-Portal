@@ -2,14 +2,15 @@ import { useState } from 'react';
 import PaymentSettings from '../components/PaymentSettings';
 import SubscribersManagement from '../components/SubscribersManagement';
 import ManagerManagement from '../components/ManagerManagement';
+import CategorySettings from '../components/CategorySettings';
 import DesignSettings from '../components/DesignSettings';
 import GeneralSettings from '../components/GeneralSettings';
 import BackupRestore from '../components/BackupRestore';
 import DataRetention from '../components/DataRetention';
 import SocialSettings from '../components/SocialSettings';
-import { CreditCard, Users, UserCog, Palette, Settings, DatabaseBackup, ShieldAlert, Share2 } from 'lucide-react';
+import { CreditCard, Users, UserCog, Palette, Settings, DatabaseBackup, ShieldAlert, Share2, Tag } from 'lucide-react';
 
-type Tab = 'subscribers' | 'managers' | 'plans' | 'design' | 'community' | 'general' | 'backup' | 'retention';
+type Tab = 'subscribers' | 'managers' | 'plans' | 'categories' | 'design' | 'community' | 'general' | 'backup' | 'retention';
 
 export default function Admin() {
   const [tab, setTab] = useState<Tab>('subscribers');
@@ -18,6 +19,9 @@ export default function Admin() {
     { id: 'subscribers', label: 'Subscribers', icon: Users },
     { id: 'managers', label: 'Managers', icon: UserCog },
     { id: 'plans', label: 'Plans', icon: CreditCard },
+    // Sits next to Managers and Plans because it governs what managers may do,
+    // rather than with the presentation tabs further along.
+    { id: 'categories', label: 'Categories', icon: Tag },
     { id: 'community', label: 'Community', icon: Share2 },
     { id: 'design', label: 'Design', icon: Palette },
     { id: 'general', label: 'General', icon: Settings },
@@ -32,7 +36,9 @@ export default function Admin() {
         <h1 className="font-heading text-3xl font-bold text-zinc-900">Admin Panel</h1>
       </div>
 
-      <div className="flex gap-1 mb-5 bg-white rounded-xl p-1 shadow-soft w-fit flex-wrap">
+      {/* w-fit is deliberately gone: with nine tabs the row is wider than the
+          container on a laptop, and w-fit would let it overflow the card. */}
+      <div className="flex gap-1 mb-5 bg-white rounded-xl p-1 shadow-soft flex-wrap">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -50,6 +56,7 @@ export default function Admin() {
         {tab === 'subscribers' && <SubscribersManagement />}
         {tab === 'managers' && <ManagerManagement />}
         {tab === 'plans' && <PaymentSettings />}
+        {tab === 'categories' && <CategorySettings />}
         {tab === 'community' && <SocialSettings />}
         {tab === 'design' && <DesignSettings />}
         {tab === 'general' && <GeneralSettings />}

@@ -4,13 +4,15 @@ import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { getJob } from '../lib/jobsData';
-import { Job } from '../types';
+import { getCategories } from '../lib/categoriesData';
+import { Job, Category } from '../types';
 import JobCard from '../components/JobCard';
 import { Bookmark, Loader2 } from 'lucide-react';
 
 export default function Cart() {
   const { user } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -24,7 +26,21 @@ export default function Cart() {
     if (!user) return;
     try {
       setLoading(true);
-      const cartSnap = await getDoc(doc(db, 'carts', user.uid));
+
+      /**
+       * ALL categories, including disabled ones — the same call Dashboard
+       * makes. A saved job may sit in a category that has since been turned
+       * off, and its badge must still show the real name rather than falling
+       * back to a prettified id.
+       *
+       * Started alongside the cart read since the two are independent.
+       */
+      const [cartSnap, cats] = await Promise.all([
+        getDoc(doc(db, 'carts', user.uid)),
+        getCategories(),
+      ]);
+      setCategories(cats);
+
       const ids: string[] = cartSnap.exists() ? (cartSnap.data().jobIds as string[]) || [] : [];
       setSavedIds(ids);
 
@@ -87,6 +103,7 @@ export default function Cart() {
               isSaved={true}
               onToggleSave={toggleSave}
               savingId={savingId}
+              categories={categories}
             />
           ))}
         </div>

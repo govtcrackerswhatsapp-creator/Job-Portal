@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+/* Fonts are NOT imported here any more.
+   A CSS @import is the slowest way to load a webfont: the browser has to
+   download and parse this file before it even discovers the Google Fonts URL,
+   then that stylesheet requests the actual font files. Three sequential hops,
+   all of them render-blocking.
+   They are now <link> tags in index.html, where the preload scanner finds them
+   while the HTML is still being parsed. See file 20. */
 
 :root {
   --brand: #8b2df2;
@@ -23,13 +29,14 @@ body {
   overflow-wrap: break-word;
 }
 
-/* Horizontally scrollable rows (the dashboard filter chips). Still scrollable
-   by touch, trackpad and wheel, but with no visible scrollbar track. */
+/* Horizontally scrollable rows. The dashboard filter chips that used this are
+   gone — replaced by the multi-select CategoryFilter — but the class is kept
+   for any future scrolling strip and costs nothing when unused. */
 .no-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;
   -webkit-overflow-scrolling: touch;
-  /* Stops a sideways swipe on the chip row from triggering the browser back
+  /* Stops a sideways swipe on a chip row from triggering the browser back
      gesture on iOS and Android. */
   overscroll-behavior-x: contain;
 }

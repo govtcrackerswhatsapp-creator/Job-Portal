@@ -2,11 +2,24 @@ import { useState, useRef } from 'react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
+import { clearCategoriesCache } from '../lib/categoriesData';
 import { Download, Upload, Loader2, AlertTriangle, CheckCircle2, Database } from 'lucide-react';
 
-// Collections included in backups. (Firebase Auth login accounts are NOT here — they
-// live outside Firestore and can't be exported/imported this way.)
-const COLLECTIONS = ['jobs', 'plans', 'settings', 'payments', 'carts', 'users'];
+/**
+ * Collections included in backups. (Firebase Auth login accounts are NOT here —
+ * they live outside Firestore and can't be exported/imported this way.)
+ *
+ * 'categories' MUST be in this list. Every job stores a category id, and if the
+ * taxonomy is not backed up then a restore rebuilds all the jobs while leaving
+ * every one of them pointing at ids that no longer exist — readable badges, but
+ * absent from the dashboard filter, which is silent data loss.
+ *
+ * Placed before 'jobs' so that on a restore the categories exist by the time
+ * the jobs referencing them are written. Firestore does not enforce referential
+ * integrity, so this is cosmetic rather than required — but it means a restore
+ * interrupted partway leaves a coherent database rather than orphaned jobs.
+ */
+const COLLECTIONS = ['categories', 'jobs', 'plans', 'settings', 'payments', 'carts', 'users'];
 
 interface BackupData {
   version: number;
@@ -74,9 +87,12 @@ export default function BackupRestore() {
       let count = 0;
       let failed = 0;
       let skippedSelf = 0;
-      for (const col of Object.keys(backup.collections)) {
-        if (!COLLECTIONS.includes(col)) continue; // ignore unknown collections
+      // Iterate COLLECTIONS rather than the file's own key order, so categories
+      // are always restored before the jobs that reference them regardless of
+      // how the backup file happens to be laid out.
+      for (const col of COLLECTIONS) {
         const docs = backup.collections[col];
+        if (!docs) continue; // this backup predates the collection
         for (const id of Object.keys(docs)) {
           // LOCKOUT GUARD: never restore your own user document. An older backup
           // may hold a pre-promotion role, which would demote you mid-restore and
@@ -93,6 +109,12 @@ export default function BackupRestore() {
           }
         }
       }
+
+      // The category cache is a module-level TTL cache, so without this the
+      // restored taxonomy would not appear for up to three minutes and the job
+      // form would keep offering the pre-restore list.
+      clearCategoriesCache();
+
       const extra = [
         failed > 0 ? `${failed} failed (see console)` : '',
         skippedSelf > 0 ? 'your own account was skipped' : '',
@@ -110,7 +132,7 @@ export default function BackupRestore() {
   return (
     <div>
       <h2 className="font-heading text-lg font-semibold text-zinc-900 mb-1">Backup & Restore</h2>
-      <p className="text-sm text-zinc-500 mb-5">Export all your data (jobs, plans, payments, subscribers, settings) to a file, or restore from one.</p>
+      <p className="text-sm text-zinc-500 mb-5">Export all your data (jobs, categories, plans, payments, subscribers, settings) to a file, or restore from one.</p>
 
       {/* Export */}
       <div className="border border-zinc-100 rounded-xl p-5 mb-4">
