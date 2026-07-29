@@ -3,19 +3,11 @@ import { sanitizeHtml, isEmptyHtml, safeUrl } from './richText';
 import { dateInputToTimestamp, timestampToDateInput } from './format';
 
 /**
- * Bulk job import: parsing, normalising, validating, matching and diffing.
+ * Bulk job import: parse, validate, plan, and build write payloads.
  *
- * Pure logic only — no React, no Firestore. The panel renders what this
- * produces; jobsData.commitJobImport() performs the writes.
- *
- * Every value here goes through the SAME helpers the manual job form uses
- * (sanitizeHtml / isEmptyHtml / dateInputToTimestamp / safeUrl), so an
- * imported job is byte-identical to one typed into the form.
- *
- * CHANGED: the hardcoded CATEGORIES list is gone. Categories are editable
- * documents now, so the valid ids arrive as a parameter (PlanOptions.categoryIds)
- * rather than being baked in here. That keeps this module free of Firestore —
- * the panel loads the list and passes it down.
+ * PURE LOGIC. Nothing here touches Firestore or React — that is what makes it
+ * testable and what lets JobImportPanel show a full preview before a single
+ * document is written. Keep it that way.
  */
 
 export const MAX_IMPORT_ROWS = 200;
@@ -32,11 +24,42 @@ export const KNOWN_FIELDS = [
   'notificationDate', 'applicationStartDate', 'applicationEndDate', 'examDate',
   'ageLimit', 'educationalQualification', 'examDetails', 'studyMaterial',
   'customSections', 'linkButtons',
+  'onHold', 'holdLabel', 'holdNote',
 ] as const;
 export type KnownField = (typeof KNOWN_FIELDS)[number];
 
-/** Server-controlled: silently ignored if a file supplies them. */
-export const IGNORED_FIELDS = ['id', 'createdAt', 'createdBy'];
+/**
+ * Server-controlled: silently ignored if a file supplies them.
+ *
+ * heldAt belongs here, NOT in KNOWN_FIELDS. Export emits it so a backup is
+ * complete, and without this entry every exported held row would warn "Unknown
+ * field heldAt" on re-import. Listing it here makes the round trip silent while
+ * keeping the hold clock un-forgeable from a file — it is stamped by
+ * buildCreatePayload / buildUpdatePayload and nowhere else.
+ */
+export const IGNORED_FIELDS = ['id', 'createdAt', 'createdBy', 'heldAt'];
+
+/**
+ * Editorial hold fields.
+ *
+ * These are the ONLY fields exempt from replace mode's "absent means clear it"
+ * rule. Hold is a decision made in the admin UI; a bulk content refresh that
+ * happens not to mention hold must never undo it as a side effect. So both the
+ * preview (diffRow) and the write (buildUpdatePayload) skip them unless the
+ * file names them explicitly.
+ *
+ * The two must agree. An earlier version had diffRow walking every KNOWN_FIELD
+ * while buildUpdatePayload used a fixed list, so the preview announced
+ * "onHold: true -> (empty)" and then the write left it alone. A preview that
+ * disagrees with the write is worse than either behaviour on its own, because
+ * it costs you trust in the preview for the fields that DO change.
+ *
+ * To release jobs in bulk, say so: { "onHold": false }.
+ */
+const HOLD_FIELDS: KnownField[] = ['onHold', 'holdLabel', 'holdNote'];
+
+/** Card space is finite. Longer labels are truncated with a warning, not rejected. */
+export const HOLD_LABEL_MAX = 60;
 
 const RICH_FIELDS: KnownField[] = ['ageLimit', 'educationalQualification', 'examDetails', 'studyMaterial'];
 
@@ -84,6 +107,16 @@ export interface PlannedRow extends NormalisedRow {
   targetTitle?: string;
   diffs: FieldDiff[];
   nearMatch?: { title: string; refCode: string };
+  /**
+   * Was the matched job ALREADY on hold? Set by planImport on 'update' rows.
+   *
+   * Exists so buildUpdatePayload can tell a NEW hold from a re-stated one and
+   * only stamp heldAt on the false->true transition. Without it, exporting held
+   * jobs and re-importing them (the file still says onHold: true) would reset
+   * every hold clock to zero and destroy the "held 47 days ago" ageing that is
+   * the whole reason heldAt exists.
+   */
+  targetWasHeld?: boolean;
 }
 
 export interface ImportPlan {
@@ -99,7 +132,6 @@ export interface ParseResult {
 
 // ---------------------------------------------------------------- identity
 
-/** Lowercase, accent-stripped, hyphenated slug. Digits are kept: "2026" matters. */
 export function slugify(input: string): string {
   return (input || '')
     .normalize('NFKD')
@@ -139,26 +171,22 @@ export function parseImportText(input: string): ParseResult {
   let text = (input || '').replace(/^\uFEFF/, '').trim();
   if (!text) return { rows: [], warnings, error: 'Nothing to import — paste JSON or choose a file.' };
 
-  const fence = text.match(/^```[a-zA-Z]*\s*\n([\s\S]*?)\n?```$/);
-  if (fence) {
-    text = fence[1].trim();
-    warnings.push('Removed the surrounding ``` code fence.');
+  // Strip markdown fences an AI may have wrapped the JSON in.
+  const fenced = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenced) {
+    text = fenced[1].trim();
+    warnings.push('Removed the markdown code fence around the JSON.');
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
-  } catch (first) {
-    const straightened = text
-      .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
-      .replace(/[\u2018\u2019\u201A\u201B]/g, "'");
-    try {
-      parsed = JSON.parse(straightened);
-      warnings.push('Curly quotes were converted to straight quotes so the file could be read — check the preview carefully.');
-    } catch {
-      const msg = first instanceof Error ? first.message : String(first);
-      return { rows: [], warnings, error: 'That is not valid JSON. ' + msg };
-    }
+  } catch (e) {
+    return {
+      rows: [],
+      warnings,
+      error: 'That is not valid JSON. ' + (e instanceof Error ? e.message : String(e)),
+    };
   }
 
   let list: unknown[];
@@ -166,34 +194,28 @@ export function parseImportText(input: string): ParseResult {
     list = parsed;
   } else if (parsed && typeof parsed === 'object') {
     const obj = parsed as Record<string, unknown>;
-    if (Array.isArray(obj.jobs)) {
-      list = obj.jobs;
-    } else {
-      list = [obj];
-      warnings.push('Read the file as a single job.');
-    }
+    if (Array.isArray(obj.jobs)) list = obj.jobs;
+    else return { rows: [], warnings, error: 'Expected an array of jobs, or an object with a "jobs" array.' };
   } else {
-    return { rows: [], warnings, error: 'Expected a list of jobs.' };
+    return { rows: [], warnings, error: 'Expected an array of jobs.' };
   }
 
   const rows: Record<string, unknown>[] = [];
-  list.forEach((r, i) => {
+  list.forEach((r) => {
     if (r && typeof r === 'object' && !Array.isArray(r)) rows.push(r as Record<string, unknown>);
-    else warnings.push('Entry ' + (i + 1) + ' is not a job object and was skipped.');
   });
 
-  if (rows.length === 0) return { rows: [], warnings, error: 'No jobs found in that file.' };
+  if (rows.length === 0) return { rows: [], warnings, error: 'No job entries found in that file.' };
   if (rows.length > MAX_IMPORT_ROWS) {
     return {
-      rows: [], warnings,
-      error: 'That file has ' + rows.length + ' jobs. The limit is ' + MAX_IMPORT_ROWS +
-             ' per import — split it into smaller files.',
+      rows: [],
+      warnings,
+      error: `That file has ${rows.length} jobs. The limit is ${MAX_IMPORT_ROWS} per import — split it into smaller files.`,
     };
   }
+
   return { rows, warnings };
 }
-
-// ---------------------------------------------------------------- field helpers
 
 function asString(v: unknown): string {
   if (v === null || v === undefined) return '';
@@ -203,66 +225,78 @@ function asString(v: unknown): string {
 }
 
 function normaliseHex(v: string, fallback: string): string {
-  const s = v.trim();
-  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(s) ? s : fallback;
+  const t = (v || '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(t) ? t : fallback;
 }
 
 function parseDate(v: unknown): { value: number | null; error?: string } {
-  if (v === null || v === undefined || v === '') return { value: null };
-  if (typeof v === 'number' && isFinite(v)) return { value: v };
   const s = asString(v).trim();
-  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (!m) return { value: null, error: '"' + s + '" is not a date. Use YYYY-MM-DD, e.g. 2026-08-15.' };
-  const ms = dateInputToTimestamp(m[1]);
-  if (ms === null) return { value: null, error: '"' + s + '" is not a real calendar date.' };
-  // JS rolls 2026-02-30 forward to 2026-03-02 rather than failing — catch that.
-  if (timestampToDateInput(ms) !== m[1]) {
-    return { value: null, error: '"' + s + '" is not a real calendar date.' };
+  if (!s) return { value: null };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return { value: null, error: `"${s}" is not a valid date. Use YYYY-MM-DD.` };
   }
+  const ms = dateInputToTimestamp(s);
+  if (ms === null) return { value: null, error: `"${s}" is not a real calendar date.` };
   return { value: ms };
+}
+
+/**
+ * Strict-ish boolean. Accepts real booleans plus the spellings a spreadsheet or
+ * an LLM realistically emits. Anything else is an ERROR rather than a silent
+ * coercion — "maybe" quietly becoming false would release a hold without
+ * telling anyone, which is precisely the failure this feature exists to stop.
+ */
+function parseBool(v: unknown): { value: boolean | null; error?: string } {
+  if (typeof v === 'boolean') return { value: v };
+  if (typeof v === 'number') {
+    if (v === 1) return { value: true };
+    if (v === 0) return { value: false };
+    return { value: null, error: 'must be true or false (got ' + v + ').' };
+  }
+  const t = asString(v).trim().toLowerCase();
+  if (t === 'true' || t === 'yes' || t === 'y' || t === '1') return { value: true };
+  if (t === 'false' || t === 'no' || t === 'n' || t === '0' || t === '') return { value: false };
+  return { value: null, error: 'must be true or false (got "' + asString(v) + '").' };
 }
 
 function parseSkills(v: unknown): { value: string[]; warnings: string[] } {
   const warnings: string[] = [];
-  let raw: string[] = [];
-  if (Array.isArray(v)) raw = v.map(asString);
-  else if (typeof v === 'string') raw = v.split(',');
-  else if (v === null || v === undefined) raw = [];
-  else warnings.push('skills should be a list of strings — value ignored.');
-
-  const out: string[] = [];
-  const seen = new Set<string>();
-  raw.map((s) => s.trim()).filter(Boolean).forEach((s) => {
-    const k = s.toLowerCase();
-    if (seen.has(k)) return;
-    seen.add(k);
-    out.push(s);
-  });
-  return { value: out, warnings };
+  let list: string[] = [];
+  if (Array.isArray(v)) {
+    list = v.map((x) => asString(x).trim()).filter(Boolean);
+  } else {
+    const s = asString(v).trim();
+    if (s) {
+      list = s.split(',').map((x) => x.trim()).filter(Boolean);
+      warnings.push('skills was a string — split on commas.');
+    }
+  }
+  if (list.length > 20) {
+    warnings.push(`skills had ${list.length} entries — kept the first 20.`);
+    list = list.slice(0, 20);
+  }
+  return { value: list, warnings };
 }
 
 function parseSections(v: unknown): { value: JobSection[]; errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
-  if (v === null || v === undefined) return { value: [], errors, warnings };
-  if (!Array.isArray(v)) {
-    errors.push('customSections must be a list.');
-    return { value: [], errors, warnings };
-  }
   const out: JobSection[] = [];
+  if (v === null || v === undefined || v === '') return { value: out, errors, warnings };
+  if (!Array.isArray(v)) {
+    errors.push('customSections must be an array of { title, content } objects.');
+    return { value: out, errors, warnings };
+  }
   v.forEach((item, i) => {
-    const label = 'Section ' + (i + 1);
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
-      warnings.push(label + ' is not an object and was skipped.');
+      warnings.push(`customSections[${i}] was not an object and was skipped.`);
       return;
     }
     const o = item as Record<string, unknown>;
     const title = asString(o.title).trim();
-    const rawContent = asString(o.content);
-    const content = isEmptyHtml(rawContent) ? '' : sanitizeHtml(rawContent);
-    // Mirrors handleSave: a section survives on title OR content.
-    if (!title && !content) {
-      warnings.push(label + ' has no title and no content — dropped.');
+    const content = sanitizeHtml(asString(o.content));
+    if (!title && isEmptyHtml(content)) {
+      warnings.push(`customSections[${i}] was empty and was skipped.`);
       return;
     }
     out.push({ title, content });
@@ -273,33 +307,32 @@ function parseSections(v: unknown): { value: JobSection[]; errors: string[]; war
 function parseButtons(v: unknown): { value: JobLinkButton[]; errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
-  if (v === null || v === undefined) return { value: [], errors, warnings };
-  if (!Array.isArray(v)) {
-    errors.push('linkButtons must be a list.');
-    return { value: [], errors, warnings };
-  }
   const out: JobLinkButton[] = [];
+  if (v === null || v === undefined || v === '') return { value: out, errors, warnings };
+  if (!Array.isArray(v)) {
+    errors.push('linkButtons must be an array of { text, url } objects.');
+    return { value: out, errors, warnings };
+  }
   v.forEach((item, i) => {
-    const label = 'Button ' + (i + 1);
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
-      warnings.push(label + ' is not an object and was skipped.');
+      warnings.push(`linkButtons[${i}] was not an object and was skipped.`);
       return;
     }
     const o = item as Record<string, unknown>;
     const text = asString(o.text).trim();
     const rawUrl = asString(o.url).trim();
-    if (!text && !rawUrl) { warnings.push(label + ' is empty — dropped.'); return; }
-    if (!text) { warnings.push(label + ' has a link but no button text — dropped.'); return; }
-    if (!rawUrl) { warnings.push(label + ' ("' + text + '") has no URL — dropped.'); return; }
-
-    const url = safeUrl(rawUrl);
-    if (!url) {
-      warnings.push(label + ' ("' + text + '") has an unusable URL "' + rawUrl +
-                    '" — dropped. Use https://, mailto: or tel:.');
+    if (!text && !rawUrl) {
+      warnings.push(`linkButtons[${i}] was empty and was skipped.`);
       return;
     }
-    if (url !== rawUrl) {
-      warnings.push(label + ' ("' + text + '") URL corrected to ' + url + '.');
+    if (!text) {
+      warnings.push(`linkButtons[${i}] had no text and was skipped.`);
+      return;
+    }
+    const url = safeUrl(rawUrl);
+    if (!url) {
+      warnings.push(`linkButtons[${i}] ("${text}") had an unusable URL and was skipped. Use https://, mailto: or tel:.`);
+      return;
     }
     out.push({
       text,
@@ -311,14 +344,8 @@ function parseButtons(v: unknown): { value: JobLinkButton[]; errors: string[]; w
   return { value: out, errors, warnings };
 }
 
-// ---------------------------------------------------------------- normalise
+// ---------------------------------------------------------------- normalising
 
-/**
- * @param categoryIds Valid category ids, from the categories collection. When
- *   omitted or empty the category is accepted with a warning rather than
- *   rejected — a failed category load must not make every row in the file
- *   invalid.
- */
 export function normaliseRow(
   raw: Record<string, unknown>,
   index: number,
@@ -363,63 +390,54 @@ export function normaliseRow(
       } else {
         errors.push({
           field: 'category',
-          message: 'category "' + asString(raw.category) + '" is not valid. Use one of: ' + categoryIds.join(', ') + '.',
+          message: '"' + c + '" is not a category. Use one of: ' + categoryIds.join(', ') + '.',
         });
       }
-    }
-  }
-
-  if (has('workMode')) {
-    const w = asString(raw.workMode).trim().toLowerCase();
-    if (!w) { present.add('workMode'); values.workMode = ''; }
-    else if ((WORK_MODES as string[]).indexOf(w) !== -1) { present.add('workMode'); values.workMode = w as WorkMode; }
-    else {
-      errors.push({
-        field: 'workMode',
-        message: 'workMode "' + asString(raw.workMode) + '" is not valid. Use onsite, hybrid, remote, or leave it empty.',
-      });
+    } else {
+      errors.push({ field: 'category', message: 'category is empty.' });
     }
   }
 
   TEXT_FIELDS.forEach((f) => {
     if (!has(f)) return;
-    const v = asString(raw[f]).trim();
-    if (f === 'companyLogo' && v && !/^https?:\/\//i.test(v)) {
-      warnings.push({ field: f, message: 'companyLogo "' + v + '" is not an http(s) URL — cleared, the letter tile will be used.' });
-      present.add(f);
-      bag[f] = '';
-      return;
-    }
     present.add(f);
-    bag[f] = v;
+    bag[f] = asString(raw[f]).trim();
   });
 
   RICH_FIELDS.forEach((f) => {
     if (!has(f)) return;
-    const rawV = asString(raw[f]);
+    const clean = sanitizeHtml(asString(raw[f]));
     present.add(f);
-    bag[f] = isEmptyHtml(rawV) ? '' : sanitizeHtml(rawV);
+    bag[f] = isEmptyHtml(clean) ? '' : clean;
   });
+
+  if (has('workMode')) {
+    const w = asString(raw.workMode).trim().toLowerCase();
+    if (!w) { present.add('workMode'); values.workMode = ''; }
+    else if (WORK_MODES.indexOf(w as WorkMode) !== -1) { present.add('workMode'); values.workMode = w as WorkMode; }
+    else {
+      errors.push({
+        field: 'workMode',
+        message: '"' + w + '" is not a work mode. Use onsite, hybrid, remote, or leave it blank.',
+      });
+    }
+  }
 
   DATE_FIELDS.forEach((f) => {
     if (!has(f)) return;
     const r = parseDate(raw[f]);
-    if (r.error) { errors.push({ field: f, message: f + ': ' + r.error }); return; }
+    if (r.error) { errors.push({ field: f, message: r.error }); return; }
     present.add(f);
     bag[f] = r.value;
   });
 
-  // A past exam date silently expires the listing the moment it imports, so
-  // flag it here. Deliberately a warning, not an error: back-filling a
-  // finished exam onto an old job is a legitimate thing to do.
-  if (present.has('examDate') && typeof values.examDate === 'number') {
-    const DAY_MS = 24 * 60 * 60 * 1000;
-    if (values.examDate + DAY_MS <= Date.now()) {
-      warnings.push({
-        field: 'examDate',
-        message: 'examDate is in the past — this job will import as expired. Check the year if that was not intended.',
-      });
-    }
+  // A date in the past is legal (you may be importing an archive), but it is
+  // almost always a typo in the year, so say so.
+  if (present.has('examDate') && values.examDate && values.examDate < Date.now()) {
+    warnings.push({
+      field: 'examDate',
+      message: 'examDate is in the past — this job will import as expired. Check the year if that was not intended.',
+    });
   }
 
   if (has('skills')) {
@@ -441,6 +459,70 @@ export function normaliseRow(
     r.errors.forEach((m) => errors.push({ field: 'linkButtons', message: m }));
     r.warnings.forEach((m) => warnings.push({ field: 'linkButtons', message: m }));
     if (r.errors.length === 0) { present.add('linkButtons'); values.linkButtons = r.value; }
+  }
+
+  /**
+   * EDITORIAL HOLD.
+   *
+   * Three rules, chosen so a file can never half-apply a hold:
+   *
+   *  1. onHold: true REQUIRES holdLabel in the same row. The label is public —
+   *     it replaces the stage line on the card — so a held job without one
+   *     renders a blank space. getJobStage() carries a fallback for documents
+   *     edited straight in the Firebase console, but a file has no excuse.
+   *     Export always emits the pair, so the round trip is unaffected.
+   *
+   *  2. onHold: false CLEARS the label and note too. Releasing a job while
+   *     leaving "Result awaited" behind means the stale text reappears the next
+   *     time that job is held.
+   *
+   *  3. Omitting onHold entirely changes nothing, in EITHER mode. See
+   *     HOLD_FIELDS.
+   */
+  if (has('onHold')) {
+    const r = parseBool(raw.onHold);
+    if (r.error) {
+      errors.push({ field: 'onHold', message: 'onHold ' + r.error });
+    } else if (r.value === true) {
+      const label = asString(raw.holdLabel).trim();
+      if (!label) {
+        errors.push({
+          field: 'holdLabel',
+          message: 'onHold is true but holdLabel is missing. The label is shown publicly on the job card, so it cannot be blank.',
+        });
+      } else {
+        let clean = label;
+        if (clean.length > HOLD_LABEL_MAX) {
+          clean = clean.slice(0, HOLD_LABEL_MAX).trim();
+          warnings.push({
+            field: 'holdLabel',
+            message: 'holdLabel was longer than ' + HOLD_LABEL_MAX + ' characters and was shortened to "' + clean + '".',
+          });
+        }
+        present.add('onHold'); values.onHold = true;
+        present.add('holdLabel'); values.holdLabel = clean;
+        if (has('holdNote')) { present.add('holdNote'); values.holdNote = asString(raw.holdNote).trim(); }
+      }
+    } else {
+      // Explicit release: wipe the pair as well, per rule 2.
+      present.add('onHold'); values.onHold = false;
+      present.add('holdLabel'); values.holdLabel = '';
+      present.add('holdNote'); values.holdNote = '';
+    }
+  } else if (has('holdLabel') || has('holdNote')) {
+    // Label/note WITHOUT onHold: treated as an edit to an existing hold. Kept
+    // rather than rejected because renaming a label in bulk is a reasonable
+    // thing to want. planImport warns if the target is not actually held, since
+    // in that case the value is stored but has no visible effect.
+    if (has('holdLabel')) {
+      let clean = asString(raw.holdLabel).trim();
+      if (clean.length > HOLD_LABEL_MAX) {
+        clean = clean.slice(0, HOLD_LABEL_MAX).trim();
+        warnings.push({ field: 'holdLabel', message: 'holdLabel was shortened to ' + HOLD_LABEL_MAX + ' characters.' });
+      }
+      present.add('holdLabel'); values.holdLabel = clean;
+    }
+    if (has('holdNote')) { present.add('holdNote'); values.holdNote = asString(raw.holdNote).trim(); }
   }
 
   let refCode = slugify(asString(raw.refCode));
@@ -473,17 +555,15 @@ export function normaliseRow(
 function summarise(v: unknown, field?: string): string {
   if (v === null || v === undefined || v === '') return '(empty)';
   if (Array.isArray(v)) {
-    if (v.length === 0) return '(none)';
-    if (typeof v[0] === 'string') return (v as string[]).join(', ');
-    return v.length + (v.length === 1 ? ' item' : ' items');
+    if (v.length === 0) return '(empty)';
+    if (field === 'skills') return v.join(', ');
+    return v.length + ' item' + (v.length === 1 ? '' : 's');
   }
-  if (typeof v === 'number') {
-    if (field && DATE_FIELDS.indexOf(field as KnownField) !== -1) return timestampToDateInput(v) || String(v);
-    return String(v);
+  if (field && DATE_FIELDS.indexOf(field as KnownField) !== -1 && typeof v === 'number') {
+    return timestampToDateInput(v);
   }
   const s = String(v).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!s) return '(empty)';
-  return s.length > 70 ? s.slice(0, 70) + '…' : s;
+  return s.length > 80 ? s.slice(0, 80) + '…' : s;
 }
 
 function sameValue(a: unknown, b: unknown): boolean {
@@ -494,13 +574,25 @@ function sameValue(a: unknown, b: unknown): boolean {
 function defaultFor(f: KnownField): unknown {
   if (DATE_FIELDS.indexOf(f) !== -1) return null;
   if (f === 'skills' || f === 'customSections' || f === 'linkButtons') return [];
+  // onHold is a boolean: without this it would default to '' and write an empty
+  // string into a boolean field. Reachable only if HOLD_FIELDS ever stops being
+  // exempt from replace mode, but wrong is wrong.
+  if (f === 'onHold') return false;
   return '';
 }
 
 function diffRow(row: PlannedRow, target: Job, replaceMode: boolean): FieldDiff[] {
   const out: FieldDiff[] = [];
+  /**
+   * Replace mode diffs every field, EXCEPT the hold fields — those are only
+   * diffed when the file names them. This must stay in lockstep with the same
+   * exemption in buildUpdatePayload: the preview and the write have to describe
+   * the same operation, or the preview is lying.
+   */
   const fields: KnownField[] = replaceMode
-    ? (KNOWN_FIELDS as readonly KnownField[]).slice()
+    ? (KNOWN_FIELDS as readonly KnownField[]).filter(
+        (f) => HOLD_FIELDS.indexOf(f) === -1 || row.present.has(f),
+      )
     : Array.from(row.present);
   const bag = row.values as Record<string, unknown>;
   const existing = target as unknown as Record<string, unknown>;
@@ -649,6 +741,19 @@ export function planImport(
     row.action = 'update';
     row.targetId = target.id;
     row.targetTitle = target.title;
+    // Lets buildUpdatePayload tell a NEW hold from a re-stated one, so heldAt is
+    // stamped only on the false->true transition and a round-tripped export does
+    // not reset every hold clock.
+    row.targetWasHeld = target.onHold === true;
+    // A label with no onHold, on a job that is not held: stored, but invisible
+    // until someone holds the job. Worth saying so — silence here reads as
+    // "the label was applied".
+    if (!row.present.has('onHold') && (row.present.has('holdLabel') || row.present.has('holdNote')) && !row.targetWasHeld) {
+      row.warnings.push({
+        field: 'holdLabel',
+        message: 'This job is not on hold, so the hold label/note will be saved but not shown. Add "onHold": true to actually hold it.',
+      });
+    }
     row.diffs = diffRow(row, target, opts.replaceMode);
   });
 
@@ -701,15 +806,60 @@ export function buildCreatePayload(
     location: v.location ?? '',
     workMode: v.workMode ?? '',
     skills: v.skills ?? [],
+    // Hold on a brand new job is unusual but legal — a batch restored from an
+    // export can legitimately contain held listings. heldAt is stamped here and
+    // never read from the file (it is in IGNORED_FIELDS).
+    onHold: v.onHold === true,
+    holdLabel: v.onHold === true ? (v.holdLabel ?? '') : '',
+    holdNote: v.onHold === true ? (v.holdNote ?? '') : '',
+    heldAt: v.onHold === true ? Date.now() : null,
     createdAt: Date.now(),
     createdBy: uid,
   };
 }
 
 /**
+ * Stamp heldAt / clear the hold fields consistently on an update.
+ *
+ * Mutates `out` in place and is called from BOTH modes, so hold behaves
+ * identically whichever one you are in — the only field group for which that is
+ * true, and deliberately so.
+ *
+ *  - file omits onHold        -> every hold key removed from the payload, so the
+ *                                stored value survives untouched
+ *  - onHold: true, was NOT held -> new hold, stamp heldAt now
+ *  - onHold: true, WAS held     -> re-stated, leave heldAt alone so the clock keeps running
+ *  - onHold: false              -> release: clear the pair and null the clock
+ */
+function applyHoldToUpdate(out: Record<string, unknown>, row: PlannedRow): void {
+  if (!row.present.has('onHold')) {
+    // Silent on hold state: never write it, never clear the clock. But a file
+    // MAY still edit the label or note on its own (renaming holds in bulk), so
+    // only drop the keys the file did not actually supply.
+    delete out.onHold;
+    delete out.heldAt;
+    if (!row.present.has('holdLabel')) delete out.holdLabel;
+    if (!row.present.has('holdNote')) delete out.holdNote;
+    return;
+  }
+  const holding = row.values.onHold === true;
+  out.onHold = holding;
+  out.holdLabel = holding ? (row.values.holdLabel ?? '') : '';
+  out.holdNote = holding ? (row.values.holdNote ?? '') : '';
+  if (!holding) out.heldAt = null;
+  else if (row.targetWasHeld) delete out.heldAt;
+  else out.heldAt = Date.now();
+}
+
+/**
  * Merge mode: only keys the file actually supplied, so an omitted field keeps
  * its stored value. Replace mode: the full document.
  * createdAt / createdBy / id are never written on update.
+ *
+ * HOLD IS EXEMPT FROM REPLACE MODE. Replace mode otherwise means "absent =
+ * clear it", but a bulk content refresh must not be able to release a hold as a
+ * side effect of not mentioning it. diffRow applies the same exemption, so the
+ * preview and this function always describe the same write.
  */
 export function buildUpdatePayload(
   row: PlannedRow,
@@ -720,11 +870,13 @@ export function buildUpdatePayload(
     const full = buildCreatePayload(row, '', fallbackCategory);
     delete full.createdAt;
     delete full.createdBy;
+    applyHoldToUpdate(full, row);
     return full;
   }
   const out: Record<string, unknown> = {};
   const bag = row.values as Record<string, unknown>;
   row.present.forEach((f) => { out[f] = bag[f]; });
+  applyHoldToUpdate(out, row);
   out.refCode = row.refCode; // always backfilled so the next import matches
   return out;
 }

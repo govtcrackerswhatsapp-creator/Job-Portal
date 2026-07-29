@@ -106,6 +106,51 @@ export interface Job {
   location?: string;
   workMode?: WorkMode | '';
   skills?: string[];
+
+  /**
+   * EDITORIAL HOLD.
+   *
+   * A job whose dates have passed is expired — that is a fact, derived from the
+   * calendar, and `isJobExpired()` keeps saying so. Hold is a separate, human
+   * decision layered on top: "this listing is finished by the calendar, but I
+   * still want it around because the result / interview / counselling is
+   * pending."
+   *
+   * Deliberately NOT wired into isJobExpired(). Expiry stays pure date logic so
+   * the derived-lifecycle model never has to argue with a stored status field.
+   * Hold only affects which TAB a job files under, and what its card says.
+   *
+   * Held jobs leave the Expired bucket, so "delete all expired" cannot reach
+   * them. That is the whole point of the feature.
+   */
+  onHold?: boolean;
+
+  /**
+   * PUBLIC. Rendered on the job card and detail page in place of the muted
+   * "Completed" a past exam date would otherwise produce, e.g. "Result awaited".
+   *
+   * Required whenever onHold is true — an empty label leaves a blank line where
+   * the stage should be, which is worse than the label it replaced. The form
+   * enforces it and the importer rejects the row, but getJobStage() still
+   * carries a fallback because a document edited directly in the Firebase
+   * console can reach the client with this empty.
+   */
+  holdLabel?: string;
+
+  /** PRIVATE. Admin-only reminder, never shown to users, e.g. "chase SSC helpdesk". */
+  holdNote?: string;
+
+  /**
+   * When the hold was applied (ms). Stamped automatically, never typed and
+   * never importable — it is in the importer's IGNORED_FIELDS alongside
+   * createdAt for exactly that reason.
+   *
+   * Exists so the Hold tab can sort oldest-first and say "held 47 days ago".
+   * That is the only thing stopping a hold sitting there forever unnoticed,
+   * which is the failure mode a plain boolean flag would have had. Cleared on
+   * release, so re-holding a job starts a fresh clock.
+   */
+  heldAt?: number;
   createdAt: number;
   createdBy: string;
 }

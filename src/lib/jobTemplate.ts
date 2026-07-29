@@ -59,6 +59,10 @@ Rules:
   DO NOT use markdown - **bold** will show as literal asterisks.
 - linkButtons: every url must start with https://, mailto: or tel:. Put ONLY
   the URL in "url" and the label in "text" - never both in the same field.
+- onHold / holdLabel / holdNote: DO NOT SET THESE. They mark a finished listing
+  that an admin has chosen to keep visible (results pending, counselling under
+  way) and are decided in the admin panel, never by you. Omitting them leaves
+  any existing hold untouched, which is always the correct behaviour here.
 - companyLogo: leave it out unless you have a real image URL.
 - customSections: use these for anything that does not fit a standard field
   (selection process, vacancy tables, fee details, important notes). There is
@@ -90,6 +94,9 @@ function buildFieldGuide(categoryIds?: string[]): Record<string, string> {
     studyMaterial: 'Rich text. Preparation resources.',
     customSections: 'List of { "title", "content" }. Unlimited, shown in the order given. Use for anything without a dedicated field.',
     linkButtons: 'List of { "text", "url", "bgColor", "textColor" }. Colours are optional and default to the site purple. url must be https://, mailto: or tel: and must contain the URL only.',
+    onHold: 'true or false. OPTIONAL, and normally left out. Marks a listing whose dates have passed but which should stay out of the Expired tab (result pending, counselling under way). LEAVING IT OUT NEVER CHANGES A JOB\'S HOLD STATE, in merge or replace mode — to release jobs in bulk you must say "onHold": false explicitly. Setting it to true REQUIRES holdLabel in the same entry.',
+    holdLabel: 'REQUIRED when onHold is true. SHOWN PUBLICLY on the job card in place of the usual status line, e.g. "Result awaited" or "Interview stage". Keep it under ' + String(60) + ' characters — longer labels are shortened. Do not put anything private here.',
+    holdNote: 'Optional PRIVATE reminder for admins only, never shown to users, e.g. "chase SSC helpdesk in August". Cleared automatically when the job is released.',
   };
 }
 
@@ -170,6 +177,7 @@ export function buildTemplateFile(categoryIds?: string[]): string {
         'Fields not listed in "_fields" are ignored. id, createdAt and createdBy are set automatically.',
         'Export uses this exact same shape, so the round trip works: export, edit, re-import, and matching jobs update in place instead of duplicating.',
         'HOW EXPIRY WORKS: a listing stays live until its examDate when one is set, otherwise until its applicationEndDate. Both days are inclusive. Set examDate on any recruitment decided by an exam and the listing will survive the application deadline instead of expiring on it.',
+        'HOLD IS NEVER CLEARED BY OMISSION. A job put On Hold in the admin panel stays held no matter what you import, unless an entry says "onHold": false. That is true in replace mode too, where every other missing field IS cleared - a bulk content refresh must not be able to release a hold by accident. To release in bulk, add "onHold": false to those entries.',
       ],
       _aiPrompt: buildAiPrompt(categoryIds),
       _fields: buildFieldGuide(categoryIds),
@@ -210,6 +218,25 @@ export function jobToExportRow(job: Job): Record<string, unknown> {
   put('studyMaterial', job.studyMaterial);
   put('customSections', job.customSections);
   put('linkButtons', job.linkButtons);
+  /**
+   * Hold is emitted ONLY when the job is actually held.
+   *
+   * Writing "onHold": false on every ordinary row would be noise on an export
+   * of 200 jobs, and worse, re-importing it would take the explicit-release
+   * path on every single one — pointless writes that also reset holdLabel and
+   * heldAt. Omitting it means an unheld job round-trips as a no-op, which is
+   * what it should be.
+   *
+   * When the job IS held, both onHold and holdLabel are written together,
+   * because the importer rejects one without the other. heldAt rides along for
+   * completeness (Backup/Restore keeps the clock) and is ignored on import.
+   */
+  if (job.onHold) {
+    row.onHold = true;
+    row.holdLabel = job.holdLabel || '';
+    put('holdNote', job.holdNote);
+    put('heldAt', job.heldAt);
+  }
   return row;
 }
 

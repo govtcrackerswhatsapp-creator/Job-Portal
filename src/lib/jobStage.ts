@@ -17,6 +17,12 @@ import { formatDate } from './format';
  * Separating them means both dates stay truthful and the card reports the real
  * position: "Applications closed - Exam 8 Aug".
  *
+ * HOLD sits on top of all of this without disturbing it. isJobExpired() stays
+ * pure date logic — a held job whose dates have passed is still expired, and
+ * still says so. Hold only decides which tab it files under (ManageJobs) and
+ * what the card says (getJobStage). Keeping the two separate is what stops a
+ * stored status field from ever contradicting the derived one.
+ *
  * Nothing here is stored. Every value is derived from the dates at read time,
  * so a listing moves through its stages on its own as the calendar advances —
  * no status field, no cron, no admin having to remember to update anything.
@@ -77,6 +83,13 @@ export function lifecycleEndDate(job: Pick<Job, 'examDate' | 'applicationEndDate
  * the stage shown on the card both come through here, so they can never
  * disagree about a given job.
  *
+ * DELIBERATELY IGNORES onHold. A held job whose dates have passed IS expired —
+ * that is a fact about the calendar. Hold is an editorial decision layered on
+ * top by the caller, which is why Manage Jobs routes on `job.onHold` FIRST and
+ * only then falls through to this function. Wiring hold in here would make a
+ * stored flag able to contradict derived date logic, which is exactly the
+ * confusion this module was built to prevent.
+ *
  * The 30-day age fallback is deliberately preserved from the original
  * implementation: without it, jobs carrying no dates at all would become
  * permanently active and never surface for cleanup.
@@ -88,6 +101,7 @@ export function isJobExpired(job: Job, now: number = Date.now()): boolean {
 }
 
 export type JobStageKind =
+  | 'on-hold'       // held open by an admin decision, regardless of dates
   | 'upcoming'      // application window has not opened yet
   | 'open'          // applications open, comfortably far from the deadline
   | 'closing-soon'  // applications open, deadline within URGENT_DAYS
@@ -109,6 +123,17 @@ export interface JobStage {
 }
 
 /**
+ * Shown when a job is held but carries no label.
+ *
+ * The form requires a label and the importer rejects a row without one, so this
+ * should be unreachable through the app. It exists because a document edited
+ * directly in the Firebase console can still arrive here with holdLabel empty,
+ * and the alternative is an empty string — which renders as a blank line where
+ * the stage used to be. A blank line is worse than the "Completed" it replaced.
+ */
+export const HOLD_FALLBACK_LABEL = 'Update awaited';
+
+/**
  * Where this listing sits on its own timeline, as a label ready to render.
  *
  * Public on the card by design. A free user seeing "Applications closed" with
@@ -125,6 +150,30 @@ export function getJobStage(job: Job, now: number = Date.now()): JobStage {
   // Computed once here so every branch below reports the same answer the
   // Active/Expired tabs do.
   const expired = isJobExpired(job, now);
+
+  // EDITORIAL HOLD — checked before every date branch, because that is the
+  // entire point: an admin has decided this listing stays useful even though
+  // the calendar disagrees. Without this branch first, a held job whose exam
+  // has passed would fall through to 'completed' and render a muted grey
+  // "Completed", which reads as dead — the exact thing hold exists to fix.
+  //
+  // `expired` is still reported honestly from isJobExpired(), so the invariant
+  // documented on JobStage holds: stage.expired always agrees with
+  // isJobExpired(). Hold changes which TAB a job files under and what its card
+  // says; it does not change whether the dates have passed.
+  if (job.onHold) {
+    return {
+      kind: 'on-hold',
+      label: (job.holdLabel || '').trim() || HOLD_FALLBACK_LABEL,
+      // Neutral, never muted. Muted is the grey used for finished listings, and
+      // a held job is the opposite of finished.
+      tone: 'neutral',
+      expired,
+      // No countdown: a hold has no end date by design. The Hold tab surfaces
+      // age instead, via heldAt.
+      daysLeft: null,
+    };
+  }
 
   // The exam is over, so the whole process is finished.
   if (exam && isDayPast(exam, now)) {

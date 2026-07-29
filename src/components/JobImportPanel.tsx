@@ -211,11 +211,24 @@ export default function JobImportPanel({ existingJobs, uid, isAdmin, onClose, on
         </label>
       </div>
 
-      <p className="text-xs text-zinc-400 mt-2">
-        {replaceMode
-          ? 'Replace mode: a matched job becomes exactly what the file says — fields the file leaves out will be cleared, including examDate.'
-          : 'Merge mode: fields the file leaves out keep their current values. Up to ' + MAX_IMPORT_ROWS + ' jobs per file.'}
-      </p>
+      {/* The replace-mode line used to promise that everything omitted gets
+          cleared. That is no longer true of the hold fields, and an inaccurate
+          warning here is worse than none — someone would omit onHold expecting
+          a bulk release, get silence, and have no idea why. */}
+      {replaceMode ? (
+        <p className="text-xs text-zinc-400 mt-2">
+          Replace mode: a matched job becomes exactly what the file says — fields the file leaves out are
+          cleared, including examDate.{' '}
+          <span className="text-amber-700">
+            Hold is the one exception: it is never released by omission. To release held jobs in bulk, add{' '}
+            <span className="font-mono">“onHold”: false</span> to those entries.
+          </span>
+        </p>
+      ) : (
+        <p className="text-xs text-zinc-400 mt-2">
+          Merge mode: fields the file leaves out keep their current values. Up to {MAX_IMPORT_ROWS} jobs per file.
+        </p>
+      )}
 
       {/* ---- errors / warnings ---- */}
       {parseError && (

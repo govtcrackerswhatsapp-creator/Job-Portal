@@ -10,9 +10,9 @@ import { isJobExpired, getJobStage, STAGE_TEXT_CLASS } from '../lib/jobStage';
 import { sanitizeHtml, isEmptyHtml } from '../lib/richText';
 import RichTextEditor from '../components/RichTextEditor';
 import JobImportPanel from '../components/JobImportPanel';
-import { jobIdentity } from '../lib/jobImport';
+import { jobIdentity, HOLD_LABEL_MAX } from '../lib/jobImport';
 import { downloadJobsExport } from '../lib/jobTemplate';
-import { Plus, Pencil, Trash2, X, Loader2, Save, Briefcase, AlertTriangle, ArrowUp, ArrowDown, Link as LinkIcon, Upload, Download, Search, CalendarCheck } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Loader2, Save, Briefcase, AlertTriangle, ArrowUp, ArrowDown, Link as LinkIcon, Upload, Download, Search, CalendarCheck, PauseCircle, PlayCircle, Clock } from 'lucide-react';
 
 interface JobFormState {
   refCode: string;
@@ -57,6 +57,35 @@ const inputToTimestamp = dateInputToTimestamp;
 
 type RangeMode = 'all' | '7d' | '30d' | '90d' | 'custom';
 
+/** The three buckets a job can be in. Hold wins over the date-derived pair. */
+type View = 'active' | 'expired' | 'hold';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A hold older than this is flagged in the Hold tab.
+ *
+ * Hold has no end date by design — you said so, and a date you have to guess is
+ * a date you end up ignoring. The cost of that choice is that a hold can sit
+ * there forever, so ageing is the safety net: the tab sorts oldest-first and
+ * anything past this threshold says so out loud.
+ */
+const STALE_HOLD_DAYS = 90;
+
+/** "held 47 days ago", for the Hold tab. */
+function heldAgo(ms?: number | null): string {
+  if (!ms) return 'on hold';
+  const days = Math.floor((Date.now() - ms) / DAY_MS);
+  if (days <= 0) return 'held today';
+  if (days === 1) return 'held yesterday';
+  return `held ${days} days ago`;
+}
+
+function holdAgeDays(ms?: number | null): number {
+  if (!ms) return 0;
+  return Math.floor((Date.now() - ms) / DAY_MS);
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
@@ -76,12 +105,23 @@ export default function ManageJobs() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<JobFormState>({ ...EMPTY_JOB });
-  const [view, setView] = useState<'active' | 'expired'>('active');
+  const [view, setView] = useState<View>('active');
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showImport, setShowImport] = useState(false);
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+
+  // Hold dialog. Kept OUT of the job form on purpose: holding is a decision
+  // about a listing, not a property you edit alongside its salary. Putting it
+  // in the form would mean opening a held job to fix a typo and risking the
+  // flag on save.
+  const [holdTarget, setHoldTarget] = useState<Job | null>(null);
+  const [holdLabelInput, setHoldLabelInput] = useState('');
+  const [holdNoteInput, setHoldNoteInput] = useState('');
+  const [holdSaving, setHoldSaving] = useState(false);
+  /** The job open in the form, so its hold state can be shown read-only. */
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
 
   // Export panel
   const [showExport, setShowExport] = useState(false);
@@ -132,8 +172,32 @@ export default function ManageJobs() {
    * about the same job. The rule: examDate when set, otherwise
    * applicationEndDate, and a 30-day age fallback for jobs carrying neither.
    */
-  const activeJobs = useMemo(() => jobs.filter((j) => !isJobExpired(j)), [jobs]);
-  const expiredJobs = useMemo(() => jobs.filter((j) => isJobExpired(j)), [jobs]);
+  /**
+   * THREE buckets, and hold is checked FIRST.
+   *
+   * isJobExpired() is untouched — a held job whose dates have passed is still
+   * expired and still reports so. What changes is only where it FILES: held
+   * jobs leave the Expired list entirely, which is what puts them out of reach
+   * of deletableExpired and therefore of "Delete All Expired".
+   */
+  const heldJobs = useMemo(
+    () =>
+      jobs
+        .filter((j) => j.onHold)
+        // Oldest hold first — the OPPOSITE of every other list here, which is
+        // newest-first. A hold that has been sitting for six months is the one
+        // that needs attention, so it must not sink to the bottom.
+        .sort((a, b) => (a.heldAt ?? 0) - (b.heldAt ?? 0)),
+    [jobs],
+  );
+  const activeJobs = useMemo(() => jobs.filter((j) => !j.onHold && !isJobExpired(j)), [jobs]);
+  const expiredJobs = useMemo(() => jobs.filter((j) => !j.onHold && isJobExpired(j)), [jobs]);
+
+  /** Holds past STALE_HOLD_DAYS. Surfaced so a hold cannot quietly become permanent. */
+  const staleHolds = useMemo(
+    () => heldJobs.filter((j) => holdAgeDays(j.heldAt) >= STALE_HOLD_DAYS),
+    [heldJobs],
+  );
 
   /** Matches title, company, location and the reference code. */
   const matchesSearch = useMemo(() => {
@@ -151,31 +215,53 @@ export default function ManageJobs() {
 
   const filteredActive = useMemo(() => activeJobs.filter(matchesSearch), [activeJobs, matchesSearch]);
   const filteredExpired = useMemo(() => expiredJobs.filter(matchesSearch), [expiredJobs, matchesSearch]);
-  const shownJobs = view === 'active' ? filteredActive : filteredExpired;
+  const filteredHeld = useMemo(() => heldJobs.filter(matchesSearch), [heldJobs, matchesSearch]);
+  const shownJobs = view === 'active' ? filteredActive : view === 'expired' ? filteredExpired : filteredHeld;
 
   /**
    * Matches sitting in the tab you are NOT looking at. Without this, searching
    * "afcat" in Active and finding nothing reads as "it does not exist" when it
    * is in fact one tab away.
    */
-  const otherTabMatches = view === 'active' ? filteredExpired.length : filteredActive.length;
+  const otherTabs: { id: View; label: string; count: number }[] = [
+    { id: 'active', label: 'Active', count: filteredActive.length },
+    { id: 'expired', label: 'Expired', count: filteredExpired.length },
+    { id: 'hold', label: 'On Hold', count: filteredHeld.length },
+  ].filter((t) => t.id !== view && t.count > 0);
+  const otherTabMatches = otherTabs.reduce((n, t) => n + t.count, 0);
 
   // Managers may only delete jobs they created (enforced by Firestore rules too),
   // so anything they cannot delete is not offered for selection.
   const canDelete = (job: Job) => user?.role === 'superadmin' || job.createdBy === user?.uid;
+  /**
+   * Hold is a SUPERADMIN decision, and the Firestore rules enforce that by
+   * pinning the hold fields on the manager branch. This flag keeps the UI
+   * honest about it — without it a manager would see Hold on their own job,
+   * click it, and get a bare permission error from Firestore.
+   */
+  const canHold = user?.role === 'superadmin';
   // Scoped to what is VISIBLE: with a search active, "Delete All Expired" must
   // not reach past the filter into jobs you cannot see.
   const deletableExpired = filteredExpired.filter((j) => j.id && canDelete(j));
-  const allSelected = deletableExpired.length > 0 && deletableExpired.every((j) => selectedIds.includes(j.id!));
+  /**
+   * Held jobs are selectable for deletion too — you asked to be able to clear
+   * them from this tab whenever you like. What they deliberately do NOT get is
+   * a "Delete All" sweep: the whole point of hold is that nothing in it is
+   * removed en masse by accident.
+   */
+  const deletableHeld = filteredHeld.filter((j) => j.id && canDelete(j));
+
+  const selectable = view === 'expired' ? deletableExpired : view === 'hold' ? deletableHeld : [];
+  const allSelected = selectable.length > 0 && selectable.every((j) => selectedIds.includes(j.id!));
 
   const toggleSelect = (id?: string) => {
     if (!id) return;
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
   const toggleSelectAll = () => {
-    setSelectedIds(allSelected ? [] : deletableExpired.map((j) => j.id!));
+    setSelectedIds(allSelected ? [] : selectable.map((j) => j.id!));
   };
-  const switchView = (v: 'active' | 'expired') => { setView(v); setSelectedIds([]); };
+  const switchView = (v: View) => { setView(v); setSelectedIds([]); };
 
   /** Delete a list of job ids, continuing past individual failures. */
   const deleteMany = async (ids: string[], label: string) => {
@@ -260,6 +346,7 @@ export default function ManageJobs() {
   const openCreate = () => {
     setForm({ ...EMPTY_JOB, category: activeCategories[0]?.id || '' });
     setEditingId(null);
+    setEditingJob(null);
     setFormKey((k) => k + 1);
     setSectionsKey((k) => k + 1);
     setShowForm(true);
@@ -278,9 +365,85 @@ export default function ManageJobs() {
       skills: (job.skills || []).join(', '),
     });
     setEditingId(job.id || null);
+    // Kept so the form can SHOW the hold state without carrying it in form
+    // state. JobFormState has no hold fields, so handleSave's payload cannot
+    // mention them, so saving an edit can never disturb a hold. That is the
+    // guarantee; editingJob is only for display.
+    setEditingJob(job);
     setFormKey((k) => k + 1);
     setSectionsKey((k) => k + 1);
     setShowForm(true);
+  };
+
+  // ---------------------------------------------------------------- hold
+
+  const openHold = (job: Job) => {
+    setHoldTarget(job);
+    setHoldLabelInput(job.holdLabel || '');
+    setHoldNoteInput(job.holdNote || '');
+  };
+
+  const closeHold = () => {
+    setHoldTarget(null);
+    setHoldLabelInput('');
+    setHoldNoteInput('');
+  };
+
+  /**
+   * Put a job on hold, or save an edit to an existing hold.
+   *
+   * heldAt is stamped ONLY on a fresh hold. Re-saving the label on a job that
+   * is already held must not restart the clock, or the ageing that keeps holds
+   * visible would reset every time you tidied up a label.
+   */
+  const confirmHold = async () => {
+    if (!holdTarget?.id) return;
+    const label = holdLabelInput.trim();
+    if (!label) { alert('Enter a status label. It is shown publicly on the job card.'); return; }
+    try {
+      setHoldSaving(true);
+      const wasHeld = holdTarget.onHold === true;
+      const payload: Record<string, unknown> = {
+        onHold: true,
+        holdLabel: label.slice(0, HOLD_LABEL_MAX),
+        holdNote: holdNoteInput.trim(),
+      };
+      if (!wasHeld) payload.heldAt = Date.now();
+      await updateDoc(doc(db, 'jobs', holdTarget.id), payload as any);
+      clearJobsCache();
+      closeHold();
+      await fetchJobs();
+      showToast(wasHeld ? 'Hold updated.' : 'Moved to On Hold — it is now out of reach of "Delete All Expired".');
+    } catch (e) {
+      console.error('Error holding job:', e);
+      alert('Failed to update hold. Check your permissions.');
+    } finally {
+      setHoldSaving(false);
+    }
+  };
+
+  /**
+   * Release a hold. Clears all four fields — leaving a stale label behind means
+   * it reappears the next time this job is held.
+   *
+   * The job then re-buckets on its own: Expired if its dates have passed,
+   * Active if they have since been edited forward. Nothing here decides that.
+   */
+  const handleRelease = async (job: Job) => {
+    if (!job.id) return;
+    if (!confirm(`Release "${job.title}" from hold?\n\nIt will move back to Active or Expired depending on its dates, and can then be removed by "Delete All Expired".`)) return;
+    try {
+      setBulkDeleting(true);
+      await updateDoc(doc(db, 'jobs', job.id), { onHold: false, holdLabel: '', holdNote: '', heldAt: null } as any);
+      clearJobsCache();
+      await fetchJobs();
+      showToast(isJobExpired(job) ? 'Released — moved back to Expired.' : 'Released — moved back to Active.');
+    } catch (e) {
+      console.error('Error releasing job:', e);
+      alert('Failed to release. Check your permissions.');
+    } finally {
+      setBulkDeleting(false);
+    }
   };
 
   const addSection = () => {
@@ -385,6 +548,9 @@ export default function ManageJobs() {
         ...(payload as unknown as Job),
         createdAt: existing?.createdAt ?? Date.now(),
       });
+      // A held job stays in Hold whatever its dates say — payload carries no
+      // hold fields, so the flag survives this write untouched.
+      const destTab: View = existing?.onHold ? 'hold' : nowExpired ? 'expired' : 'active';
 
       if (editingId) {
         await updateDoc(doc(db, 'jobs', editingId), payload as any);
@@ -395,10 +561,14 @@ export default function ManageJobs() {
       setShowForm(false);
       await fetchJobs();
 
-      if (wasEditing && nowExpired !== (view === 'expired')) {
-        showToast(nowExpired
-          ? 'Saved — this job is now past its date and has moved to Expired.'
-          : 'Saved — this job is live again and has moved to Active.');
+      if (wasEditing && destTab !== view) {
+        showToast(
+          destTab === 'hold'
+            ? 'Saved — this job is on hold, so it stays in the On Hold tab.'
+            : destTab === 'expired'
+              ? 'Saved — this job is now past its date and has moved to Expired.'
+              : 'Saved — this job is live again and has moved to Active.',
+        );
       }
     } catch (e) {
       console.error('Error saving job:', e);
@@ -516,6 +686,22 @@ export default function ManageJobs() {
             <h2 className="font-heading text-lg font-semibold text-zinc-900">{editingId ? 'Edit Job' : 'Create New Job'}</h2>
             <button onClick={() => setShowForm(false)} className="p-1.5 text-zinc-400 hover:text-zinc-700"><X className="w-5 h-5" /></button>
           </div>
+
+          {/* Hold is shown here but NOT edited here. The form has no hold fields,
+              so saving cannot touch them — which is exactly why editing a held
+              job to fix a typo is safe. Changing the hold is a separate,
+              deliberate action from the list. */}
+          {editingJob?.onHold && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-2">
+              <PauseCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="min-w-0 text-xs text-amber-900 leading-relaxed">
+                <strong>On hold — “{editingJob.holdLabel || 'Update awaited'}”</strong>
+                {editingJob.holdNote && <> · <span className="text-amber-800">{editingJob.holdNote}</span></>}
+                <br />
+                Saving here will not change that. Use Hold / Release in the job list.
+              </div>
+            </div>
+          )}
 
           <div className="bg-[#8b2df2]/5 border border-[#8b2df2]/15 rounded-xl p-3 mb-5 text-xs text-zinc-600 leading-relaxed">
             <strong className="text-zinc-800">Formatting:</strong> use the toolbar for bold, italic, underline, bullet points and numbering.
@@ -774,21 +960,31 @@ export default function ManageJobs() {
               <button onClick={() => switchView('expired')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'expired' ? 'bg-[#8b2df2] text-white' : 'text-zinc-600 hover:bg-zinc-100'}`}>
                 Expired ({search ? filteredExpired.length : expiredJobs.length})
               </button>
+              {/* Always rendered, even at zero, so the tab is discoverable
+                  before you have ever used it. */}
+              <button onClick={() => switchView('hold')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'hold' ? 'bg-[#8b2df2] text-white' : 'text-zinc-600 hover:bg-zinc-100'}`}>
+                On Hold ({search ? filteredHeld.length : heldJobs.length})
+              </button>
             </div>
-            {view === 'expired' && deletableExpired.length > 0 && (
+            {selectable.length > 0 && (
               <div className="flex items-center gap-2 flex-wrap">
                 <label className="inline-flex items-center gap-2 text-sm text-zinc-600 bg-white rounded-xl px-3 py-2 shadow-soft cursor-pointer">
                   <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} className="rounded" />
-                  Select all ({deletableExpired.length})
+                  Select all ({selectable.length})
                 </label>
                 {selectedIds.length > 0 && (
                   <button onClick={handleDeleteSelected} disabled={bulkDeleting} className="inline-flex items-center gap-2 bg-red-600 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-red-700 transition disabled:opacity-50">
                     {bulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Delete Selected ({selectedIds.length})
                   </button>
                 )}
-                <button onClick={handleBulkDeleteExpired} disabled={bulkDeleting} className="inline-flex items-center gap-2 border-2 border-red-200 text-red-600 rounded-xl px-4 py-2 text-sm font-semibold hover:bg-red-50 transition disabled:opacity-50">
-                  Delete All{search ? ' Shown' : ' Expired'}
-                </button>
+                {/* Deliberately Expired-only. A held job can be deleted one by
+                    one or by selection, but never swept — that is the whole
+                    reason the tab exists. */}
+                {view === 'expired' && (
+                  <button onClick={handleBulkDeleteExpired} disabled={bulkDeleting} className="inline-flex items-center gap-2 border-2 border-red-200 text-red-600 rounded-xl px-4 py-2 text-sm font-semibold hover:bg-red-50 transition disabled:opacity-50">
+                    Delete All{search ? ' Shown' : ' Expired'}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -797,12 +993,14 @@ export default function ManageJobs() {
           {search.trim() && otherTabMatches > 0 && (
             <div className="mb-4 text-sm text-zinc-500">
               {otherTabMatches} more match{otherTabMatches === 1 ? '' : 'es'} in{' '}
-              <button
-                onClick={() => switchView(view === 'active' ? 'expired' : 'active')}
-                className="font-semibold text-[#8b2df2] hover:underline"
-              >
-                {view === 'active' ? 'Expired' : 'Active'}
-              </button>
+              {otherTabs.map((t, i) => (
+                <span key={t.id}>
+                  {i > 0 && (i === otherTabs.length - 1 ? ' and ' : ', ')}
+                  <button onClick={() => switchView(t.id)} className="font-semibold text-[#8b2df2] hover:underline">
+                    {t.label} ({t.count})
+                  </button>
+                </span>
+              ))}
             </div>
           )}
 
@@ -812,6 +1010,20 @@ export default function ManageJobs() {
               <span>
                 Past their exam date, or their application deadline where no exam date is set (or 30+ days old with no dates).
                 Users still see them until you delete them — and a postponed exam can be brought back to Active just by editing its date.
+                If a listing still matters because a result or interview is pending, put it <strong>On Hold</strong> instead: it moves to its own tab and "Delete All Expired" can no longer reach it.
+              </span>
+            </div>
+          )}
+
+          {view === 'hold' && heldJobs.length > 0 && (
+            <div className={`rounded-xl p-3 mb-4 flex items-start gap-2 text-sm border ${staleHolds.length > 0 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-white border-zinc-200 text-zinc-600'}`}>
+              <PauseCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                {heldJobs.length} job{heldJobs.length === 1 ? '' : 's'} kept out of Expired on purpose — "Delete All Expired" cannot touch them.
+                Oldest hold first.
+                {staleHolds.length > 0 && (
+                  <> <strong>{staleHolds.length} {staleHolds.length === 1 ? 'has' : 'have'} been held over {STALE_HOLD_DAYS} days</strong> — worth checking whether {staleHolds.length === 1 ? 'it is' : 'they are'} still needed.</>
+                )}
               </span>
             </div>
           )}
@@ -824,7 +1036,11 @@ export default function ManageJobs() {
               <p className="text-zinc-500">
                 {search.trim()
                   ? 'No jobs here match that search.'
-                  : view === 'active' ? 'No active jobs. Click "New Job" to create one.' : 'No expired jobs. Your listings are all current.'}
+                  : view === 'active'
+                    ? 'No active jobs. Click "New Job" to create one.'
+                    : view === 'expired'
+                      ? 'No expired jobs. Your listings are all current.'
+                      : 'Nothing on hold. Use Hold on an expired job to keep it out of the bulk-delete sweep.'}
               </p>
             </div>
           ) : (
@@ -833,7 +1049,7 @@ export default function ManageJobs() {
                 const stage = getJobStage(job);
                 return (
                   <div key={job.id} className={`bg-white rounded-2xl shadow-soft p-4 sm:p-5 flex items-start justify-between gap-4 ${job.id && selectedIds.includes(job.id) ? 'ring-2 ring-red-300' : ''}`}>
-                    {view === 'expired' && canDelete(job) && (
+                    {view !== 'active' && canDelete(job) && (
                       <input
                         type="checkbox"
                         checked={!!job.id && selectedIds.includes(job.id)}
@@ -865,11 +1081,43 @@ export default function ManageJobs() {
                       </div>
                       <h3 className="font-semibold text-zinc-900 truncate">{job.title}</h3>
                       <p className="text-xs text-zinc-400 mt-1">Added {formatDate(job.createdAt)}</p>
+                      {/* Hold detail, only where it is the point. The age is the
+                          drift alarm: a hold with no end date needs SOMETHING
+                          telling you how long it has been sitting there. */}
+                      {job.onHold && (
+                        <div className="mt-2 flex items-start gap-1.5 text-xs">
+                          <Clock className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${holdAgeDays(job.heldAt) >= STALE_HOLD_DAYS ? 'text-amber-600' : 'text-zinc-400'}`} />
+                          <span className="min-w-0">
+                            <span className={holdAgeDays(job.heldAt) >= STALE_HOLD_DAYS ? 'font-semibold text-amber-700' : 'text-zinc-500'}>
+                              {heldAgo(job.heldAt)}
+                            </span>
+                            {job.holdNote && <span className="text-zinc-400"> · {job.holdNote}</span>}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {/* Edit is now offered in BOTH tabs. A postponed exam sits
                           in Expired, and updating its date is exactly how you
                           bring it back — it re-buckets itself on the next load. */}
+                      {/* Hold on an expired job; Edit-hold / Release once held.
+                          Not offered in Active: holding a live listing would be
+                          a no-op you could only discover by looking. */}
+                      {canHold && view === 'expired' && (
+                        <button onClick={() => openHold(job)} className="p-2 text-zinc-400 hover:text-amber-600" title="Put on hold (keeps it out of Delete All Expired)">
+                          <PauseCircle className="w-4 h-4" />
+                        </button>
+                      )}
+                      {canHold && job.onHold && (
+                        <>
+                          <button onClick={() => openHold(job)} className="p-2 text-zinc-400 hover:text-amber-600" title="Edit hold label / note">
+                            <PauseCircle className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => handleRelease(job)} disabled={bulkDeleting} className="p-2 text-zinc-400 hover:text-emerald-600 disabled:opacity-40" title="Release from hold">
+                            <PlayCircle className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
                       {canDelete(job) && <button onClick={() => openEdit(job)} className="p-2 text-zinc-400 hover:text-[#8b2df2]" title="Edit"><Pencil className="w-4 h-4" /></button>}
                       {canDelete(job) && <button onClick={() => handleDelete(job.id)} className="p-2 text-zinc-400 hover:text-red-600" title="Delete"><Trash2 className="w-4 h-4" /></button>}
                     </div>
@@ -879,6 +1127,71 @@ export default function ManageJobs() {
             </div>
           )}
         </>
+      )}
+
+      {/* ---- hold dialog ---- */}
+      {holdTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={closeHold} />
+          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg p-5 sm:p-6">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="min-w-0">
+                <h2 className="font-heading text-lg font-semibold text-zinc-900">
+                  {holdTarget.onHold ? 'Edit hold' : 'Put on hold'}
+                </h2>
+                <p className="text-sm text-zinc-500 truncate">{holdTarget.title}</p>
+              </div>
+              <button onClick={closeHold} className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 shrink-0"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="space-y-4">
+              <Field label="Status label (shown publicly on the job card)">
+                <input
+                  className={inputCls}
+                  value={holdLabelInput}
+                  maxLength={HOLD_LABEL_MAX}
+                  onChange={(e) => setHoldLabelInput(e.target.value)}
+                  placeholder="e.g. Result awaited"
+                  autoFocus
+                />
+                <div className="flex items-center justify-between mt-1 gap-3">
+                  <p className="text-xs text-zinc-400">
+                    Replaces “Completed” on the card. Users see this, so keep it public-safe.
+                  </p>
+                  <span className="text-xs text-zinc-400 shrink-0">{holdLabelInput.length}/{HOLD_LABEL_MAX}</span>
+                </div>
+              </Field>
+
+              <Field label="Private note (optional — admins only)">
+                <input
+                  className={inputCls}
+                  value={holdNoteInput}
+                  onChange={(e) => setHoldNoteInput(e.target.value)}
+                  placeholder="e.g. chase SSC helpdesk in August"
+                />
+                <p className="text-xs text-zinc-400 mt-1">Never shown to users. Only appears in this list.</p>
+              </Field>
+
+              <div className="rounded-xl bg-zinc-50 border border-zinc-200 p-3 text-xs text-zinc-600 leading-relaxed">
+                A held job leaves the Expired tab, so <strong>“Delete All Expired” cannot reach it</strong>.
+                Its dates are not changed. Release it at any time and it returns to Active or Expired
+                depending on those dates.
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-5">
+              <button
+                onClick={confirmHold}
+                disabled={holdSaving || !holdLabelInput.trim()}
+                className="inline-flex items-center gap-2 bg-[#8b2df2] text-white rounded-xl px-5 py-2.5 text-sm font-semibold hover:opacity-90 transition disabled:opacity-50"
+              >
+                {holdSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <PauseCircle className="w-4 h-4" />}
+                {holdTarget.onHold ? 'Save hold' : 'Put on hold'}
+              </button>
+              <button onClick={closeHold} className="text-sm font-medium text-zinc-500 hover:text-zinc-800 px-3 py-2.5">Cancel</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && (
