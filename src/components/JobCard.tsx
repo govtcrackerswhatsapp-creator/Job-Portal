@@ -4,7 +4,7 @@ import { hasPortalAccess } from '../lib/access';
 import { workModeLabel, formatDate } from '../lib/format';
 import { labelForCategory } from '../lib/categoriesData';
 import { getJobStage, STAGE_TEXT_CLASS } from '../lib/jobStage';
-import { MapPin, Briefcase, IndianRupee, BadgeCheck, Bookmark, BookmarkCheck, ArrowRight, Loader2, Calendar, Clock } from 'lucide-react';
+import { MapPin, Briefcase, IndianRupee, BadgeCheck, Bookmark, BookmarkCheck, ArrowRight, Loader2, Calendar, Clock, Lock } from 'lucide-react';
 
 // Rotating color themes for cards (by index), matching the reference design.
 const THEMES = [
@@ -47,6 +47,8 @@ export default function JobCard({ job, index, user, isSaved, onToggleSave, savin
   const skills = (job.skills || []).filter((s) => s.trim());
   const wm = workModeLabel(job.workMode);
 
+  const canAccess = hasPortalAccess(user);
+
   /**
    * Where this listing sits on its own timeline.
    *
@@ -59,11 +61,16 @@ export default function JobCard({ job, index, user, isSaved, onToggleSave, savin
    */
   const stage = getJobStage(job);
 
-  // Clicking the card / View Details: paid users -> details, free users -> subscribe.
-  const openJob = () => {
-    if (hasPortalAccess(user)) navigate(`/job/${job.id}`);
-    else navigate('/subscribe');
-  };
+  /**
+   * Everyone now goes to the listing.
+   *
+   * The old behaviour sent a free user straight to /subscribe, which meant they
+   * lost the job they were interested in and were asked an abstract question —
+   * "do you want a subscription?" — instead of a concrete one. JobDetails now
+   * renders the free half of the listing with the paid sections shown as a
+   * locked panel, so the ask happens in context.
+   */
+  const openJob = () => navigate(`/job/${job.id}`);
 
   return (
     <div className={`relative min-w-0 bg-gradient-to-b ${theme.grad} to-white rounded-2xl shadow-soft hover:shadow-soft-hover transition p-4 sm:p-5 flex flex-col`}>
@@ -144,14 +151,22 @@ export default function JobCard({ job, index, user, isSaved, onToggleSave, savin
         </div>
       )}
 
-      {/* Footer: posted + view details */}
+      {/* Footer: posted + view/unlock details.
+          The button stays visually strong for both states — every click is a
+          conversion opportunity, so it should still invite the press. The lock
+          changes the EXPECTATION, not the appeal: a free user now knows there
+          is a gate before they click, which turns an ambush into a decision. */}
       <div className="mt-auto pt-3 border-t border-zinc-100 flex items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1 text-xs text-zinc-400 min-w-0">
           <Clock className="w-3.5 h-3.5 shrink-0" />
           <span className="truncate">{formatDate(job.createdAt) || 'Recently'}</span>
         </span>
         <button onClick={openJob} className={`shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap bg-gradient-to-r ${theme.btn} text-white rounded-lg px-3.5 py-1.5 text-sm font-semibold shadow-sm hover:opacity-90 transition`}>
-          View Details <ArrowRight className="w-4 h-4 shrink-0" />
+          {canAccess ? (
+            <>View Details <ArrowRight className="w-4 h-4 shrink-0" /></>
+          ) : (
+            <><Lock className="w-3.5 h-3.5 shrink-0" /> Unlock Details</>
+          )}
         </button>
       </div>
     </div>

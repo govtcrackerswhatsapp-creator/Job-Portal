@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link, useNavigate, Navigate } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { hasPortalAccess } from '../lib/access';
 import { getJob } from '../lib/jobsData';
@@ -8,7 +8,7 @@ import { Job, Category } from '../types';
 import { categoryBadgeStyle, workModeLabel, formatDate } from '../lib/format';
 import { getJobStage, STAGE_TEXT_CLASS } from '../lib/jobStage';
 import { FormattedText, isEmptyHtml, safeUrl } from '../lib/richText';
-import { ArrowLeft, Calendar, GraduationCap, Users, Loader2, FileText, BookOpen, ExternalLink, MapPin, Briefcase, IndianRupee, BadgeCheck, Code2, Info, Building2, CalendarCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Calendar, GraduationCap, Users, Loader2, FileText, BookOpen, ExternalLink, MapPin, Briefcase, IndianRupee, BadgeCheck, Code2, Info, Building2, CalendarCheck, Lock } from 'lucide-react';
 
 function initials(name: string): string {
   const t = name.trim();
@@ -51,6 +51,13 @@ function RichItem({ icon: Icon, label, value }: { icon: typeof Calendar; label: 
   );
 }
 
+/** One row of the locked manifest: what exists, never what it says. */
+interface LockedRow {
+  icon: typeof Calendar;
+  label: string;
+  note: string;
+}
+
 export default function JobDetails() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -84,10 +91,20 @@ export default function JobDetails() {
     }
   };
 
-  // Strict gate: non-subscribers never see job details — send them to subscribe.
-  if (!canAccess) {
-    return <Navigate to="/subscribe" replace />;
-  }
+  /**
+   * NO REDIRECT.
+   *
+   * This page used to bounce every non-subscriber straight to /subscribe, which
+   * meant they lost the listing they were interested in and were asked an
+   * abstract question — "do you want a subscription?" — at the exact moment
+   * their interest was concrete.
+   *
+   * Now the free half of the listing renders for everyone, and the paid
+   * sections are replaced by a manifest of what is behind the gate. The ask
+   * becomes "do you want THIS", which is a far easier yes.
+   *
+   * The paid content itself is never rendered below unless canAccess is true.
+   */
 
   if (loading) {
     return <div className="flex justify-center py-24"><Loader2 className="w-7 h-7 text-[#8b2df2] animate-spin" /></div>;
@@ -120,6 +137,38 @@ export default function JobDetails() {
     .filter((b) => b.text?.trim() && !!b.url) as { text: string; url: string; bgColor: string; textColor: string }[];
   const customSections = (job.customSections || []).filter((s) => s.title?.trim() || !isEmptyHtml(s.content));
   const hasSummary = !!(job.experience || job.salary || job.location || wm || job.applicationEndDate || job.examDate) || !isEmptyHtml(job.ageLimit);
+
+  /**
+   * The manifest shown to a free user in place of the paid sections.
+   *
+   * Built from what this listing ACTUALLY has — a row never appears for content
+   * that does not exist. A "Study material" row on a job with none is a promise
+   * the purchase cannot keep, and that is the fastest route to a refund request.
+   *
+   * Custom sections carry their real titles. "Selection process" tells an
+   * aspirant something specific they want and cannot easily find elsewhere;
+   * "2 sections" tells them nothing they can want. The titles also prove the
+   * listing was genuinely worked on rather than auto-generated.
+   */
+  const lockedRows: LockedRow[] = [];
+  if (!isEmptyHtml(job.examDetails)) {
+    lockedRows.push({ icon: FileText, label: 'Exam pattern and details', note: 'Included' });
+  }
+  if (!isEmptyHtml(job.studyMaterial)) {
+    lockedRows.push({ icon: BookOpen, label: 'Study material', note: 'Included' });
+  }
+  customSections.forEach((s) => {
+    lockedRows.push({ icon: Info, label: s.title?.trim() || 'Additional section', note: 'Included' });
+  });
+  if (linkButtons.length > 0) {
+    lockedRows.push({
+      icon: ExternalLink,
+      label: 'Official notification and apply links',
+      note: `${linkButtons.length} ${linkButtons.length === 1 ? 'link' : 'links'}`,
+    });
+  }
+
+  const showLockedPanel = !canAccess && lockedRows.length > 0;
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto">
@@ -197,7 +246,10 @@ export default function JobDetails() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Main column */}
         <div className="xl:col-span-2 space-y-4">
-          {/* Key info */}
+          {/* Key info — free for everyone. Age limit and qualification live here
+              deliberately: they are how an aspirant decides whether the listing
+              applies to them at all, and gating that would mean charging someone
+              for the right to discover they were never eligible. */}
           <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
             <h2 className="font-heading text-base font-semibold text-zinc-900 mb-4">Key Information</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -216,7 +268,8 @@ export default function JobDetails() {
             )}
           </div>
 
-          {!isEmptyHtml(job.examDetails) && (
+          {/* ---- Paid sections. Rendered ONLY for an account with access. ---- */}
+          {canAccess && !isEmptyHtml(job.examDetails) && (
             <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-3">
                 <FileText className="w-5 h-5 text-[#8b2df2]" />
@@ -226,7 +279,7 @@ export default function JobDetails() {
             </div>
           )}
 
-          {!isEmptyHtml(job.studyMaterial) && (
+          {canAccess && !isEmptyHtml(job.studyMaterial) && (
             <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-3">
                 <BookOpen className="w-5 h-5 text-[#8b2df2]" />
@@ -236,7 +289,7 @@ export default function JobDetails() {
             </div>
           )}
 
-          {customSections.map((section, i) => (
+          {canAccess && customSections.map((section, i) => (
             <div key={i} className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               {section.title?.trim() && (
                 <h2 className="font-heading text-base font-semibold text-zinc-900 mb-3">{section.title}</h2>
@@ -245,7 +298,7 @@ export default function JobDetails() {
             </div>
           ))}
 
-          {linkButtons.length > 0 && (
+          {canAccess && linkButtons.length > 0 && (
             <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <h2 className="font-heading text-base font-semibold text-zinc-900 mb-4">Important Links</h2>
               <div className="flex flex-wrap gap-3">
@@ -254,6 +307,46 @@ export default function JobDetails() {
                     {btn.text} <ExternalLink className="w-4 h-4 shrink-0" />
                   </a>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* ---- Or, for a free account, ONE panel describing what is behind
+                  the gate. One consolidated block rather than a lock per
+                  section: six stacked locks read as a wall and feel punitive,
+                  while a single list reads as a product description. ---- */}
+          {showLockedPanel && (
+            <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
+              <div className="flex items-center gap-2 mb-1">
+                <Lock className="w-5 h-5 text-[#8b2df2] shrink-0" />
+                <h2 className="font-heading text-base font-semibold text-zinc-900">What's inside this listing</h2>
+              </div>
+              <p className="text-sm text-zinc-500 mb-4">
+                {lockedRows.length} {lockedRows.length === 1 ? 'section' : 'sections'} prepared for this posting
+              </p>
+
+              <div className="border-t border-zinc-100">
+                {lockedRows.map((row, i) => (
+                  <div key={i} className={`flex items-center justify-between gap-3 py-3 ${i < lockedRows.length - 1 ? 'border-b border-zinc-100' : ''}`}>
+                    <span className="inline-flex items-center gap-2.5 min-w-0 text-sm text-zinc-800">
+                      <row.icon className="w-4 h-4 text-zinc-400 shrink-0" />
+                      <span className="truncate">{row.label}</span>
+                    </span>
+                    <span className="text-xs text-zinc-400 whitespace-nowrap shrink-0">{row.note}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* A single CTA. Repeating an upgrade button beside every locked
+                  row reads as desperate and stops being seen after the third. */}
+              <div className="mt-4 pt-4 border-t border-zinc-100 flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-sm text-zinc-500">Unlocks this and every other listing</p>
+                <button
+                  onClick={() => navigate('/subscribe')}
+                  className="inline-flex items-center gap-2 bg-gradient-to-r from-[#8b2df2] to-[#00b4d8] text-white rounded-xl px-5 py-2.5 text-sm font-semibold shadow-soft hover:opacity-90 transition"
+                >
+                  Unlock full details <ArrowRight className="w-4 h-4 shrink-0" />
+                </button>
               </div>
             </div>
           )}
@@ -297,7 +390,14 @@ export default function JobDetails() {
                 <Info className="w-5 h-5 text-[#8b2df2]" />
                 <h2 className="font-heading text-base font-semibold text-zinc-900">About {company}</h2>
               </div>
-              <p className="text-sm text-zinc-500">{company} is hiring for this position. See the important links above for the official notification and how to apply.</p>
+              {/* The links sentence is dropped for a free account — pointing at
+                  "the important links above" when none are rendered makes the
+                  page look broken. */}
+              <p className="text-sm text-zinc-500">
+                {canAccess
+                  ? `${company} is hiring for this position. See the important links above for the official notification and how to apply.`
+                  : `${company} is hiring for this position.`}
+              </p>
             </div>
           )}
         </div>

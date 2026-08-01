@@ -1,17 +1,33 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import MaintenanceGate from './components/MaintenanceGate';
 import LandingPage from './pages/LandingPage';
-import Dashboard from './pages/Dashboard';
-import ManageJobs from './pages/ManageJobs';
-import JobDetails from './pages/JobDetails';
-import Cart from './pages/Cart';
-import Profile from './pages/Profile';
-import Admin from './pages/Admin';
-import Subscription from './pages/Subscription';
-import Analytics from './pages/Analytics';
+
+/**
+ * ROUTE SPLITTING
+ *
+ * Everything below was previously a static import, so a first-time visitor who
+ * landed on "/" and never signed in still downloaded the admin panel, the bulk
+ * importer, ManageJobs, and the xlsx library before anything rendered.
+ *
+ * These are lazy. LandingPage deliberately is NOT — it is the first paint for
+ * every signed-out visitor, and making it a separate chunk would add a second
+ * network round trip to exactly the page whose speed matters most.
+ *
+ * ProtectedRoute, Layout and MaintenanceGate stay static too: they are small,
+ * they wrap the lazy routes, and splitting a wrapper only adds a waterfall.
+ */
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const JobDetails = lazy(() => import('./pages/JobDetails'));
+const Cart = lazy(() => import('./pages/Cart'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Subscription = lazy(() => import('./pages/Subscription'));
+const ManageJobs = lazy(() => import('./pages/ManageJobs'));
+const Analytics = lazy(() => import('./pages/Analytics'));
+const Admin = lazy(() => import('./pages/Admin'));
 
 /**
  * Was: a spinner until Firebase Auth resolved, then either the landing page or
@@ -60,6 +76,15 @@ function hasStoredSession(): boolean {
 
 const LIKELY_SIGNED_IN = hasStoredSession();
 
+/**
+ * Shown while a route chunk downloads. Deliberately just the page background,
+ * matching the hold state in PublicHome — a spinner that appears for 80ms reads
+ * as a glitch, an empty surface of the right colour reads as nothing at all.
+ */
+function RouteFallback() {
+  return <div className="min-h-screen bg-[#f5f5f7]" />;
+}
+
 function PublicHome() {
   const { user, loading } = useAuth();
 
@@ -80,25 +105,27 @@ export default function App() {
   return (
     <AuthProvider>
       <Router>
-        <Routes>
-          {/* Public landing — always accessible, even during maintenance */}
-          <Route path="/" element={<PublicHome />} />
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            {/* Public landing — always accessible, even during maintenance */}
+            <Route path="/" element={<PublicHome />} />
 
-          {/* Everything authenticated is behind the maintenance gate */}
-          <Route path="/subscribe" element={<ProtectedRoute><MaintenanceGate><Subscription /></MaintenanceGate></ProtectedRoute>} />
+            {/* Everything authenticated is behind the maintenance gate */}
+            <Route path="/subscribe" element={<ProtectedRoute><MaintenanceGate><Subscription /></MaintenanceGate></ProtectedRoute>} />
 
-          <Route element={<ProtectedRoute><MaintenanceGate><Layout /></MaintenanceGate></ProtectedRoute>}>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/job/:id" element={<JobDetails />} />
-            <Route path="/cart" element={<Cart />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/manage-jobs" element={<ProtectedRoute allowedRoles={['superadmin', 'manager']}><ManageJobs /></ProtectedRoute>} />
-            <Route path="/analytics" element={<ProtectedRoute allowedRoles={['superadmin', 'manager']}><Analytics /></ProtectedRoute>} />
-            <Route path="/admin" element={<ProtectedRoute allowedRoles={['superadmin']}><Admin /></ProtectedRoute>} />
-          </Route>
+            <Route element={<ProtectedRoute><MaintenanceGate><Layout /></MaintenanceGate></ProtectedRoute>}>
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/job/:id" element={<JobDetails />} />
+              <Route path="/cart" element={<Cart />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/manage-jobs" element={<ProtectedRoute allowedRoles={['superadmin', 'manager']}><ManageJobs /></ProtectedRoute>} />
+              <Route path="/analytics" element={<ProtectedRoute allowedRoles={['superadmin', 'manager']}><Analytics /></ProtectedRoute>} />
+              <Route path="/admin" element={<ProtectedRoute allowedRoles={['superadmin']}><Admin /></ProtectedRoute>} />
+            </Route>
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </Router>
     </AuthProvider>
   );

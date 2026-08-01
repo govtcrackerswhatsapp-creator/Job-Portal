@@ -1,5 +1,4 @@
 import { useEffect, useState, useMemo } from 'react';
-import * as XLSX from 'xlsx';
 import { db } from '../lib/firebase';
 import { collection, getDocs, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
@@ -35,6 +34,7 @@ export default function Analytics() {
   const [customTo, setCustomTo] = useState<string>('');
   const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -84,21 +84,40 @@ export default function Analytics() {
   // Reset to page 1 when filters change
   useEffect(() => { setPage(1); }, [dateFilter, customFrom, customTo]);
 
-  const exportExcel = () => {
-    const rows = filtered.map((p) => ({
-      Date: formatDate(p.createdAt),
-      Email: p.email,
-      Contact: p.contact || '',
-      Plan: p.planName,
-      'Amount (₹)': p.amount,
-      Status: p.status,
-      'Payment ID': p.razorpayPaymentId || '',
-      'Order ID': p.razorpayOrderId || '',
-    }));
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Payments');
-    XLSX.writeFile(wb, `payments-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  /**
+   * xlsx is roughly 900KB minified and is used ONLY here. Importing it at the
+   * top of the file put it in this page's chunk, so every admin opening
+   * Analytics paid for it whether or not they exported anything.
+   *
+   * The dynamic import moves it to its own chunk, fetched on first click and
+   * cached by the browser after that. Everything else on this page renders
+   * without it.
+   */
+  const exportExcel = async () => {
+    if (exporting) return;
+    try {
+      setExporting(true);
+      const rows = filtered.map((p) => ({
+        Date: formatDate(p.createdAt),
+        Email: p.email,
+        Contact: p.contact || '',
+        Plan: p.planName,
+        'Amount (₹)': p.amount,
+        Status: p.status,
+        'Payment ID': p.razorpayPaymentId || '',
+        'Order ID': p.razorpayOrderId || '',
+      }));
+      const XLSX = await import('xlsx');
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Payments');
+      XLSX.writeFile(wb, `payments-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (e) {
+      console.error('Export failed:', e);
+      alert('Could not build the export. Check your connection and try again.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleDelete = async (p: PaymentRecord) => {
@@ -131,8 +150,9 @@ export default function Analytics() {
           <p className="text-xs font-semibold uppercase tracking-wider text-[#8b2df2]">Insights</p>
           <h1 className="font-heading text-3xl font-bold text-zinc-900">Analytics</h1>
         </div>
-        <button onClick={exportExcel} className="inline-flex items-center gap-2 bg-emerald-600 text-white rounded-xl px-4 py-2.5 text-sm font-semibold shadow-soft hover:bg-emerald-700 transition">
-          <Download className="w-4 h-4" /> Export to Excel
+        <button onClick={exportExcel} disabled={exporting} className="inline-flex items-center gap-2 bg-emerald-600 text-white rounded-xl px-4 py-2.5 text-sm font-semibold shadow-soft hover:bg-emerald-700 transition disabled:opacity-60">
+          {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          {exporting ? 'Preparing…' : 'Export to Excel'}
         </button>
       </div>
 

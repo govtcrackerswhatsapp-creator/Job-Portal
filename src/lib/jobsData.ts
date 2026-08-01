@@ -4,9 +4,26 @@ import { Job } from '../types';
 import { cacheGet, cacheSet, cacheClear } from './cache';
 
 const JOBS_KEY = 'jobs';
-const TTL = 3 * 60 * 1000; // 3 minutes
 
-/** All jobs (newest first), cached for 3 min. Pass force=true to bypass cache. */
+/**
+ * How long a fetched jobs list stays fresh.
+ *
+ * Raised from 3 minutes. The dashboard reads the ENTIRE collection on every
+ * miss — 67 documents today, and that number grows with the content — so a
+ * short TTL was charging a full collection read several times per browsing
+ * session, and once more on every refresh.
+ *
+ * Combined with sessionStorage persistence below, a typical visit now costs one
+ * collection read instead of four or five.
+ *
+ * TRADE-OFF: a job posted right now can take up to this long to appear in a tab
+ * that is ALREADY open. The admin's own tab is unaffected — ManageJobs calls
+ * clearJobsCache() after every write. Lower this number if you post frequently
+ * and want faster propagation to live sessions.
+ */
+const TTL = 15 * 60 * 1000; // 15 minutes
+
+/** All jobs (newest first), cached for 15 min and persisted for this tab. */
 export async function getJobs(force = false): Promise<Job[]> {
   if (!force) {
     const cached = cacheGet<Job[]>(JOBS_KEY, TTL);
@@ -16,7 +33,9 @@ export async function getJobs(force = false): Promise<Job[]> {
   const snap = await getDocs(q);
   const list: Job[] = [];
   snap.forEach((d) => list.push({ id: d.id, ...(d.data() as Job) }));
-  cacheSet(JOBS_KEY, list);
+  // persist=true: this is the one payload big enough to be worth surviving a
+  // refresh, and the only one whose read cost scales with the content.
+  cacheSet(JOBS_KEY, list, true);
   return list;
 }
 

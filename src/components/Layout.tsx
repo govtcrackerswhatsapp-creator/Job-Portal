@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LayoutDashboard, Bookmark, Briefcase, BarChart3, Settings, User, LogOut, Menu, X } from 'lucide-react';
+import { isStaff as isStaffUser, hasPortalAccess, hasActivePaidSubscription } from '../lib/access';
+import { LayoutDashboard, Bookmark, Briefcase, BarChart3, Settings, User, LogOut, Menu, X, Lock } from 'lucide-react';
 
 export default function Layout() {
   const { user, signOut } = useAuth();
@@ -10,6 +11,34 @@ export default function Layout() {
 
   const isStaff = user?.role === 'superadmin' || user?.role === 'manager';
   const isAdmin = user?.role === 'superadmin';
+
+  /**
+   * What the account line under the avatar says.
+   *
+   * Was the raw stored role — "User" — which is internal taxonomy leaking into
+   * the UI. Nobody reading their own profile cares that they are a 'user'; they
+   * care what they can and cannot open. Plan state answers the question they
+   * actually have.
+   */
+  const planLabel = (): string => {
+    if (!user) return '';
+    if (isStaffUser(user)) return user.role === 'superadmin' ? 'Admin' : 'Manager';
+    if (user.freeAccess === true) return 'Free access';
+    if (hasActivePaidSubscription(user)) return user.planName?.trim() || 'Active plan';
+    return 'Free plan';
+  };
+
+  /**
+   * The quiet, always-present upgrade affordance.
+   *
+   * Shown only to a signed-in non-staff account with no access. Without it the
+   * portal gives a free user no signal at all that anything is locked — they
+   * browse comfortably, click through expecting details, and get bounced. That
+   * surprise at the moment of highest intent is what loses the sale.
+   *
+   * Deliberately ONE place in the chrome, not a banner on every screen.
+   */
+  const showUpgrade = !!user && !isStaffUser(user) && !hasPortalAccess(user);
 
   const handleSignOut = async () => {
     await signOut();
@@ -65,15 +94,30 @@ export default function Layout() {
         ))}
       </nav>
 
-      {/* User + sign out */}
+      {/* Upgrade prompt + user + sign out */}
       <div className="px-3 py-4 border-t border-zinc-100">
+        {showUpgrade && (
+          <NavLink
+            to="/subscribe"
+            onClick={() => setMobileOpen(false)}
+            className="block mb-3 rounded-xl border border-[#8b2df2]/30 bg-[#8b2df2]/5 px-3 py-2.5 hover:bg-[#8b2df2]/10 transition"
+          >
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#8b2df2]">
+              <Lock className="w-4 h-4 shrink-0" /> Unlock full details
+            </div>
+            <p className="text-xs text-zinc-500 mt-0.5 leading-snug">
+              Exam pattern, study material and official links
+            </p>
+          </NavLink>
+        )}
+
         <div className="flex items-center gap-3 px-3 py-2 mb-1">
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#8b2df2] to-[#00b4d8] flex items-center justify-center text-white font-semibold text-sm shrink-0">
             {(user?.name || user?.email || '?').charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
             <div className="text-sm font-medium text-zinc-900 truncate">{user?.name || 'User'}</div>
-            <div className="text-xs text-zinc-400 capitalize">{user?.role}</div>
+            <div className="text-xs text-zinc-400 truncate">{planLabel()}</div>
           </div>
         </div>
         <button
