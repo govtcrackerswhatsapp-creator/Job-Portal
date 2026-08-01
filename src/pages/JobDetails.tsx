@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { shouldLockJob } from '../lib/access';
+import { shouldLockJob, isSellableSection } from '../lib/access';
 import { getJob } from '../lib/jobsData';
 import { getCategories, labelForCategory, colorForCategory } from '../lib/categoriesData';
 import { Job, Category } from '../types';
@@ -97,9 +97,8 @@ export default function JobDetails() {
    * question at the exact moment their interest was concrete.
    *
    * Now the free half renders for everyone, and the paid sections are replaced
-   * by a manifest of what sits behind the gate — but ONLY on listings that have
-   * something worth gating. shouldLockJob() decides, and the job card uses the
-   * same function, so the two can never disagree.
+   * by a manifest of what sits behind the gate. shouldLockJob() decides, and
+   * the job card uses the same function, so the two cannot disagree.
    */
 
   if (loading) {
@@ -139,14 +138,23 @@ export default function JobDetails() {
   /**
    * The manifest shown in place of the paid sections when a listing is locked.
    *
-   * Built from what this listing ACTUALLY has — a row never appears for content
-   * that does not exist. A "Study material" row on a job with none is a promise
-   * the purchase cannot keep, and that is the fastest route to a refund request.
+   * Two rules decide what appears here, and both exist to protect the sale:
    *
-   * Custom sections carry their real titles. "Selection process" tells an
-   * aspirant something specific they want and cannot easily find elsewhere;
-   * "2 sections" tells them nothing they can want. The titles also prove the
-   * listing was genuinely worked on rather than auto-generated.
+   * 1. NEVER PROMISE WHAT IS NOT THERE. A row appears only for content the job
+   *    actually holds. A "Study material" row on a listing with none is a
+   *    promise the purchase cannot keep.
+   *
+   * 2. NEVER SELL BACK WHAT IS ALREADY FREE. Custom sections pass through
+   *    isSellableSection(), which drops titles restating free fields
+   *    ("Important Dates" sits on the same screen as the four free date
+   *    fields), disclaimers ("Please Note" — a caveat is not a benefit), and
+   *    labels too vague or too short to want ("Post", "05 posts").
+   *
+   * Filtered sections still RENDER IN FULL for a subscriber below. They are the
+   * listing's content; they simply are not reasons to pay.
+   *
+   * The same function governs the lock itself, so a listing whose only sections
+   * are filtered out is not locked at all — no lock can open onto an empty panel.
    */
   const lockedRows: LockedRow[] = [];
   if (locked) {
@@ -156,8 +164,8 @@ export default function JobDetails() {
     if (!isEmptyHtml(job.studyMaterial)) {
       lockedRows.push({ icon: BookOpen, label: 'Study material', note: 'Included' });
     }
-    customSections.forEach((s) => {
-      lockedRows.push({ icon: Info, label: s.title?.trim() || 'Additional section', note: 'Included' });
+    customSections.filter(isSellableSection).forEach((s) => {
+      lockedRows.push({ icon: Info, label: s.title!.trim(), note: 'Included' });
     });
     if (linkButtons.length > 0) {
       lockedRows.push({
@@ -267,8 +275,10 @@ export default function JobDetails() {
           </div>
 
           {/* ---- Paid sections. Rendered whenever the listing is NOT locked for
-                  this user — which covers both a subscriber on any listing and
-                  anyone on a listing that never earned a paywall. ---- */}
+                  this user — a subscriber on any listing, or anyone on a listing
+                  that never earned a paywall. Note that EVERY custom section
+                  renders here, including ones the manifest filtered out: they
+                  are the listing's content, they just were not sales points. ---- */}
           {!locked && !isEmptyHtml(job.examDetails) && (
             <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-3">
