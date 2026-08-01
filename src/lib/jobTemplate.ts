@@ -8,11 +8,16 @@ import { timestampToDateInput } from './format';
  * Export writes the SAME shape the importer reads, so the round trip works:
  * export -> edit (by hand or with an AI) -> import -> updates in place.
  *
- * CHANGED: the category list is no longer hardcoded into the prompt and field
- * guide. Categories are editable now, so the real ids are passed in and the
- * text is built around them — otherwise the template would tell an AI to use
- * four categories that may have been renamed, and every row would be rejected
- * with an error message listing the wrong options.
+ * The category list is not hardcoded into the prompt and field guide.
+ * Categories are editable, so the real ids are passed in and the text is built
+ * around them — otherwise the template would tell an AI to use four categories
+ * that may have been renamed, and every row would be rejected.
+ *
+ * CHANGED: the prompt now states which fields are FREE and which are PAID.
+ * Without that, an AI has no way to know that customSections ARE the product,
+ * and it produces sections like "Important Dates" that merely restate the free
+ * date fields. Those show up in the paywall manifest as things to buy, which
+ * makes a listing look padded at the exact moment the reader is deciding.
  */
 
 /** The four ids that exist on a fresh install, used when no list is supplied. */
@@ -35,7 +40,44 @@ export function buildAiPrompt(categoryIds?: string[]): string {
 Return ONLY a JSON array of job objects. No commentary, no explanation, and no
 markdown code fences.
 
-Rules:
+FREE VERSUS PAID — READ THIS FIRST.
+This portal has a paywall, and where you put information decides whether a
+reader sees it for free or has to pay for it.
+
+  FREE, shown to everyone:
+    title, category, companyName, companyLogo, location, salary, experience,
+    workMode, skills, notificationDate, applicationStartDate,
+    applicationEndDate, examDate, ageLimit, educationalQualification
+
+  PAID, shown only to subscribers:
+    examDetails, studyMaterial, customSections, linkButtons
+
+  A free reader sees the TITLE of every custom section but not its content, so
+  those titles are effectively the sales pitch for the listing.
+
+Rules that follow from that:
+- NEVER put information into customSections that already has a free field.
+  In particular, do NOT create a section called "Important Dates", "Key Dates",
+  "Timeline", "Eligibility", "Age Limit" or "Qualification". Every one of those
+  restates something the reader can already see, and a paid row promising dates
+  that are printed further up the same page destroys trust.
+- Do NOT put disclaimers, caveats or "please verify against the official
+  advertisement" notes into customSections. Paywalling a caveat looks like
+  hiding the small print. Put such a note at the END of
+  educationalQualification, which is free, or leave it out.
+- customSections are for SUBSTANTIVE preparation content that has no dedicated
+  field: selection process, vacancy or post-wise breakdown, syllabus detail,
+  application fee structure, physical or medical standards, exam centre lists,
+  reservation breakup, document checklist.
+- Give each section a SPECIFIC title. "Selection Process" and "Physical
+  Standards" tell a reader something they want; "Additional Information" and
+  "Other Details" tell them nothing and read as filler.
+- FEWER REAL SECTIONS BEAT MORE PADDING. If a posting genuinely has no
+  preparation depth — many private-sector roles do not — return no
+  customSections at all. An empty promise behind a paywall is worse than no
+  promise.
+
+Remaining rules:
 - Always return an array, even for a single job.
 - Use ONLY the field names shown in the template. Do not invent new fields.
 - If you do not know a value, LEAVE THE FIELD OUT. Never guess a date, a URL or
@@ -63,10 +105,7 @@ Rules:
   that an admin has chosen to keep visible (results pending, counselling under
   way) and are decided in the admin panel, never by you. Omitting them leaves
   any existing hold untouched, which is always the correct behaviour here.
-- companyLogo: leave it out unless you have a real image URL.
-- customSections: use these for anything that does not fit a standard field
-  (selection process, vacancy tables, fee details, important notes). There is
-  no limit on how many you add, and they appear in the order you list them.`;
+- companyLogo: leave it out unless you have a real image URL.`;
 }
 
 /** Default prompt using the built-in category ids. */
@@ -75,25 +114,25 @@ export const AI_PROMPT = buildAiPrompt();
 function buildFieldGuide(categoryIds?: string[]): Record<string, string> {
   return {
     refCode: 'REQUIRED. Stable lowercase slug, e.g. "ssc-cgl-2026". Re-importing the same refCode updates that job instead of duplicating it.',
-    title: 'REQUIRED for new jobs. Full posting title.',
-    category: 'REQUIRED for new jobs. One of: ' + categoryList(categoryIds) + '. Use the id exactly as written — an unknown category is rejected.',
-    companyName: 'Organisation or company name.',
-    companyLogo: 'Full https:// image URL. Leave out if you do not have a real one — a letter tile is shown instead.',
-    location: 'e.g. "New Delhi" or "All India".',
-    salary: 'Free text, e.g. "Rs 35,400 - 1,12,400".',
-    experience: 'Free text, e.g. "0-2 years" or "Freshers".',
-    workMode: 'One of: onsite, hybrid, remote, or "".',
-    skills: 'List of strings, e.g. ["Reasoning", "Quantitative Aptitude"].',
-    notificationDate: 'YYYY-MM-DD or null.',
-    applicationStartDate: 'YYYY-MM-DD or null.',
-    applicationEndDate: 'YYYY-MM-DD or null. The last day to apply is inclusive.',
-    examDate: 'YYYY-MM-DD or null. The date of the exam itself. When set, the listing stays live until this day (inclusive) even after applications have closed, and the closed application date is still shown truthfully. For multi-stage exams give the LAST stage you know of. Omit it if there is no exam or the date has not been announced.',
-    ageLimit: 'Rich text. Plain text with line breaks, or simple HTML.',
-    educationalQualification: 'Rich text.',
-    examDetails: 'Rich text. Exam pattern, marks, duration. This is the description of the exam, not its date — the date goes in examDate.',
-    studyMaterial: 'Rich text. Preparation resources.',
-    customSections: 'List of { "title", "content" }. Unlimited, shown in the order given. Use for anything without a dedicated field.',
-    linkButtons: 'List of { "text", "url", "bgColor", "textColor" }. Colours are optional and default to the site purple. url must be https://, mailto: or tel: and must contain the URL only.',
+    title: 'FREE. REQUIRED for new jobs. Full posting title.',
+    category: 'FREE. REQUIRED for new jobs. One of: ' + categoryList(categoryIds) + '. Use the id exactly as written — an unknown category is rejected.',
+    companyName: 'FREE. Organisation or company name.',
+    companyLogo: 'FREE. Full https:// image URL. Leave out if you do not have a real one — a letter tile is shown instead.',
+    location: 'FREE. e.g. "New Delhi" or "All India".',
+    salary: 'FREE. Free text, e.g. "Rs 35,400 - 1,12,400".',
+    experience: 'FREE. Free text, e.g. "0-2 years" or "Freshers".',
+    workMode: 'FREE. One of: onsite, hybrid, remote, or "".',
+    skills: 'FREE. List of strings, e.g. ["Reasoning", "Quantitative Aptitude"].',
+    notificationDate: 'FREE. YYYY-MM-DD or null.',
+    applicationStartDate: 'FREE. YYYY-MM-DD or null.',
+    applicationEndDate: 'FREE. YYYY-MM-DD or null. The last day to apply is inclusive.',
+    examDate: 'FREE. YYYY-MM-DD or null. The date of the exam itself. When set, the listing stays live until this day (inclusive) even after applications have closed, and the closed application date is still shown truthfully. For multi-stage exams give the LAST stage you know of. Omit it if there is no exam or the date has not been announced.',
+    ageLimit: 'FREE. Rich text. Kept free deliberately: it is how a reader decides whether the listing applies to them at all.',
+    educationalQualification: 'FREE. Rich text. Also free for the same reason. Put any "verify against the official advertisement" caveat at the end of this field rather than in a paid section.',
+    examDetails: 'PAID. Rich text. Exam pattern, marks, duration, negative marking. This is the description of the exam, not its date — the date goes in examDate.',
+    studyMaterial: 'PAID. Rich text. Preparation resources, book lists, previous papers.',
+    customSections: 'PAID. List of { "title", "content" }. Titles ARE shown to free users as the sales pitch, so make them specific. Use ONLY for substantive prep content with no dedicated field — selection process, vacancy breakdown, fee structure, physical standards. NEVER restate dates or eligibility here, and never add filler: no real sections is better than padding.',
+    linkButtons: 'PAID. List of { "text", "url", "bgColor", "textColor" }. Colours are optional and default to the site purple. url must be https://, mailto: or tel: and must contain the URL only.',
     onHold: 'true or false. OPTIONAL, and normally left out. Marks a listing whose dates have passed but which should stay out of the Expired tab (result pending, counselling under way). LEAVING IT OUT NEVER CHANGES A JOB\'S HOLD STATE, in merge or replace mode — to release jobs in bulk you must say "onHold": false explicitly. Setting it to true REQUIRES holdLabel in the same entry.',
     holdLabel: 'REQUIRED when onHold is true. SHOWN PUBLICLY on the job card in place of the usual status line, e.g. "Result awaited" or "Interview stage". Keep it under ' + String(60) + ' characters — longer labels are shortened. Do not put anything private here.',
     holdNote: 'Optional PRIVATE reminder for admins only, never shown to users, e.g. "chase SSC helpdesk in August". Cleared automatically when the job is released.',
@@ -119,9 +158,14 @@ const EXAMPLE_JOBS: Record<string, unknown>[] = [
     // card honestly reports that applications closed on 11 July.
     examDate: '2026-09-15',
     ageLimit: '18 to 32 years as on 01/08/2026.\nAge relaxation: SC/ST 5 years, OBC 3 years, PwD 10 years.',
-    educationalQualification: "Bachelor's degree in any discipline from a recognised university.\nFinal-year students may apply provided they produce proof of passing before the document verification stage.",
+    // The caveat lives here, in a FREE field. Paywalling a disclaimer reads as
+    // hiding the small print.
+    educationalQualification: "Bachelor's degree in any discipline from a recognised university.\nFinal-year students may apply provided they produce proof of passing before the document verification stage.\n\nPlease verify all requirements against the official notification before applying.",
     examDetails: '<b>Tier 1</b> - Objective, 100 questions, 200 marks, 60 minutes.<br><b>Tier 2</b> - Paper I compulsory for all posts.<br>Negative marking of 0.50 marks per wrong answer in Tier 1.',
     studyMaterial: '<ul><li>Previous 10 years solved papers</li><li>NCERT Mathematics classes 8-10</li><li>Daily current affairs for the last 12 months</li></ul>',
+    // Both sections are substantive and have no dedicated field. Note what is
+    // ABSENT: no "Important Dates" section, because the four date fields above
+    // already cover it and are shown free.
     customSections: [
       {
         title: 'Selection Process',
@@ -154,10 +198,13 @@ const EXAMPLE_JOBS: Record<string, unknown>[] = [
     // the other half of the rule.
     ageLimit: 'No specific age limit.',
     educationalQualification: 'B.E. / B.Tech / M.C.A. with a minimum of 60% aggregate and no active backlogs.',
+    // ONE real section, not three padded ones. A private-sector role with no
+    // exam has little to sell beyond this, and that is fine — inventing filler
+    // to fatten the paywall manifest is what loses trust.
     customSections: [
       {
         title: 'Interview Rounds',
-        content: 'Online assessment, technical interview, then HR discussion.',
+        content: 'Online assessment, then technical interview, then HR discussion. The online assessment covers quantitative aptitude, logical reasoning, verbal ability and pseudocode.',
       },
     ],
     linkButtons: [
@@ -176,8 +223,11 @@ export function buildTemplateFile(categoryIds?: string[]): string {
         'You can also paste this whole file to an AI along with the prompt in "_aiPrompt".',
         'Fields not listed in "_fields" are ignored. id, createdAt and createdBy are set automatically.',
         'Export uses this exact same shape, so the round trip works: export, edit, re-import, and matching jobs update in place instead of duplicating.',
+        'FREE VERSUS PAID: title, category, company, location, salary, experience, work mode, skills, all four dates, ageLimit and educationalQualification are shown to EVERYONE. examDetails, studyMaterial, customSections and linkButtons are shown only to subscribers. Free readers do see the TITLE of every custom section, so those titles act as the sales pitch.',
+        'NEVER restate a free field inside customSections. A section called "Important Dates" or "Eligibility" promises, behind a paywall, information printed further up the same page — which makes the listing look padded exactly when the reader is deciding whether to pay.',
         'HOW EXPIRY WORKS: a listing stays live until its examDate when one is set, otherwise until its applicationEndDate. Both days are inclusive. Set examDate on any recruitment decided by an exam and the listing will survive the application deadline instead of expiring on it.',
         'HOLD IS NEVER CLEARED BY OMISSION. A job put On Hold in the admin panel stays held no matter what you import, unless an entry says "onHold": false. That is true in replace mode too, where every other missing field IS cleared - a bulk content refresh must not be able to release a hold by accident. To release in bulk, add "onHold": false to those entries.',
+        'MERGE MODE ONLY WRITES FIELDS YOU INCLUDE. To REMOVE bad custom sections from an existing job you must send "customSections" with the corrected array — omitting it leaves the old ones in place.',
       ],
       _aiPrompt: buildAiPrompt(categoryIds),
       _fields: buildFieldGuide(categoryIds),

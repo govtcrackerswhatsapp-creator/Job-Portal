@@ -18,6 +18,16 @@ export type JobCategory = string;
 export type WorkMode = 'onsite' | 'hybrid' | 'remote';
 
 /**
+ * Whether a listing sits behind the paywall.
+ *
+ * 'auto' (the default, and what every existing job means by omitting the field)
+ * derives the answer from the content itself — see isPremiumJob() in lib/access.
+ * 'paid' and 'free' are manual overrides for the cases where a human disagrees
+ * with the rule.
+ */
+export type JobAccessTier = 'auto' | 'paid' | 'free';
+
+/**
  * One selectable job category, managed from Admin -> Categories.
  *
  * `color` is a hex string rather than a Tailwind class because Tailwind v4
@@ -106,6 +116,26 @@ export interface Job {
   location?: string;
   workMode?: WorkMode | '';
   skills?: string[];
+
+  /**
+   * PAYWALL TIER.
+   *
+   * Absent means 'auto', which is what every job written before this field
+   * existed means — so nothing needs migrating.
+   *
+   * Under 'auto' the lock is decided by the content, not by a setting: a job
+   * earns a paywall only when it carries exam details or study material with
+   * real substance. Everything else on a listing — title, dates, salary,
+   * eligibility, an apply link — is a fact anyone can find on the official
+   * notification in one search, so charging for it makes the subscription look
+   * like a trick and damages trust in the listings that ARE worth paying for.
+   *
+   * 'paid' and 'free' exist for the cases where that rule is wrong: a
+   * thoroughly researched selection process with no exam pattern deserves
+   * 'paid'; a two-line exam mention that would not survive scrutiny deserves
+   * 'free'.
+   */
+  accessTier?: JobAccessTier;
 
   /**
    * EDITORIAL HOLD.

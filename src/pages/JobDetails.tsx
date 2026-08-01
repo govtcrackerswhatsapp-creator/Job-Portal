@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { hasPortalAccess } from '../lib/access';
+import { shouldLockJob } from '../lib/access';
 import { getJob } from '../lib/jobsData';
 import { getCategories, labelForCategory, colorForCategory } from '../lib/categoriesData';
 import { Job, Category } from '../types';
@@ -67,8 +67,6 @@ export default function JobDetails() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  const canAccess = hasPortalAccess(user);
-
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,16 +92,14 @@ export default function JobDetails() {
   /**
    * NO REDIRECT.
    *
-   * This page used to bounce every non-subscriber straight to /subscribe, which
-   * meant they lost the listing they were interested in and were asked an
-   * abstract question — "do you want a subscription?" — at the exact moment
-   * their interest was concrete.
+   * This page used to bounce every non-subscriber to /subscribe, which meant
+   * they lost the listing they were interested in and were asked an abstract
+   * question at the exact moment their interest was concrete.
    *
-   * Now the free half of the listing renders for everyone, and the paid
-   * sections are replaced by a manifest of what is behind the gate. The ask
-   * becomes "do you want THIS", which is a far easier yes.
-   *
-   * The paid content itself is never rendered below unless canAccess is true.
+   * Now the free half renders for everyone, and the paid sections are replaced
+   * by a manifest of what sits behind the gate — but ONLY on listings that have
+   * something worth gating. shouldLockJob() decides, and the job card uses the
+   * same function, so the two can never disagree.
    */
 
   if (loading) {
@@ -118,6 +114,8 @@ export default function JobDetails() {
       </div>
     );
   }
+
+  const locked = shouldLockJob(job, user);
 
   const company = (job.companyName || '').trim();
   const skills = (job.skills || []).filter((s) => s.trim());
@@ -139,7 +137,7 @@ export default function JobDetails() {
   const hasSummary = !!(job.experience || job.salary || job.location || wm || job.applicationEndDate || job.examDate) || !isEmptyHtml(job.ageLimit);
 
   /**
-   * The manifest shown to a free user in place of the paid sections.
+   * The manifest shown in place of the paid sections when a listing is locked.
    *
    * Built from what this listing ACTUALLY has — a row never appears for content
    * that does not exist. A "Study material" row on a job with none is a promise
@@ -151,24 +149,24 @@ export default function JobDetails() {
    * listing was genuinely worked on rather than auto-generated.
    */
   const lockedRows: LockedRow[] = [];
-  if (!isEmptyHtml(job.examDetails)) {
-    lockedRows.push({ icon: FileText, label: 'Exam pattern and details', note: 'Included' });
-  }
-  if (!isEmptyHtml(job.studyMaterial)) {
-    lockedRows.push({ icon: BookOpen, label: 'Study material', note: 'Included' });
-  }
-  customSections.forEach((s) => {
-    lockedRows.push({ icon: Info, label: s.title?.trim() || 'Additional section', note: 'Included' });
-  });
-  if (linkButtons.length > 0) {
-    lockedRows.push({
-      icon: ExternalLink,
-      label: 'Official notification and apply links',
-      note: `${linkButtons.length} ${linkButtons.length === 1 ? 'link' : 'links'}`,
+  if (locked) {
+    if (!isEmptyHtml(job.examDetails)) {
+      lockedRows.push({ icon: FileText, label: 'Exam pattern and details', note: 'Included' });
+    }
+    if (!isEmptyHtml(job.studyMaterial)) {
+      lockedRows.push({ icon: BookOpen, label: 'Study material', note: 'Included' });
+    }
+    customSections.forEach((s) => {
+      lockedRows.push({ icon: Info, label: s.title?.trim() || 'Additional section', note: 'Included' });
     });
+    if (linkButtons.length > 0) {
+      lockedRows.push({
+        icon: ExternalLink,
+        label: 'Official notification and apply links',
+        note: `${linkButtons.length} ${linkButtons.length === 1 ? 'link' : 'links'}`,
+      });
+    }
   }
-
-  const showLockedPanel = !canAccess && lockedRows.length > 0;
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto">
@@ -268,8 +266,10 @@ export default function JobDetails() {
             )}
           </div>
 
-          {/* ---- Paid sections. Rendered ONLY for an account with access. ---- */}
-          {canAccess && !isEmptyHtml(job.examDetails) && (
+          {/* ---- Paid sections. Rendered whenever the listing is NOT locked for
+                  this user — which covers both a subscriber on any listing and
+                  anyone on a listing that never earned a paywall. ---- */}
+          {!locked && !isEmptyHtml(job.examDetails) && (
             <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-3">
                 <FileText className="w-5 h-5 text-[#8b2df2]" />
@@ -279,7 +279,7 @@ export default function JobDetails() {
             </div>
           )}
 
-          {canAccess && !isEmptyHtml(job.studyMaterial) && (
+          {!locked && !isEmptyHtml(job.studyMaterial) && (
             <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-3">
                 <BookOpen className="w-5 h-5 text-[#8b2df2]" />
@@ -289,7 +289,7 @@ export default function JobDetails() {
             </div>
           )}
 
-          {canAccess && customSections.map((section, i) => (
+          {!locked && customSections.map((section, i) => (
             <div key={i} className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               {section.title?.trim() && (
                 <h2 className="font-heading text-base font-semibold text-zinc-900 mb-3">{section.title}</h2>
@@ -298,7 +298,7 @@ export default function JobDetails() {
             </div>
           ))}
 
-          {canAccess && linkButtons.length > 0 && (
+          {!locked && linkButtons.length > 0 && (
             <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <h2 className="font-heading text-base font-semibold text-zinc-900 mb-4">Important Links</h2>
               <div className="flex flex-wrap gap-3">
@@ -311,11 +311,11 @@ export default function JobDetails() {
             </div>
           )}
 
-          {/* ---- Or, for a free account, ONE panel describing what is behind
-                  the gate. One consolidated block rather than a lock per
-                  section: six stacked locks read as a wall and feel punitive,
-                  while a single list reads as a product description. ---- */}
-          {showLockedPanel && (
+          {/* ---- Or, when locked, ONE panel describing what is behind the gate.
+                  One consolidated block rather than a lock per section: six
+                  stacked locks read as a wall and feel punitive, while a single
+                  list reads as a product description. ---- */}
+          {locked && lockedRows.length > 0 && (
             <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-1">
                 <Lock className="w-5 h-5 text-[#8b2df2] shrink-0" />
@@ -361,7 +361,6 @@ export default function JobDetails() {
               <SummaryItem icon={IndianRupee} label="Salary" value={job.salary || ''} />
               <SummaryItem icon={MapPin} label="Location" value={job.location || ''} />
               <SummaryItem icon={Building2} label="Work Mode" value={wm} />
-              <RichItem icon={Users} label="Age Limit" value={job.ageLimit} />
               <SummaryItem icon={Calendar} label="Last Date" value={formatDate(job.applicationEndDate)} />
               <SummaryItem icon={CalendarCheck} label="Exam Date" value={formatDate(job.examDate)} />
               {!hasSummary && (
@@ -390,13 +389,12 @@ export default function JobDetails() {
                 <Info className="w-5 h-5 text-[#8b2df2]" />
                 <h2 className="font-heading text-base font-semibold text-zinc-900">About {company}</h2>
               </div>
-              {/* The links sentence is dropped for a free account — pointing at
-                  "the important links above" when none are rendered makes the
-                  page look broken. */}
+              {/* The links sentence is dropped when locked — pointing at "the
+                  important links above" when none are rendered looks broken. */}
               <p className="text-sm text-zinc-500">
-                {canAccess
-                  ? `${company} is hiring for this position. See the important links above for the official notification and how to apply.`
-                  : `${company} is hiring for this position.`}
+                {locked
+                  ? `${company} is hiring for this position.`
+                  : `${company} is hiring for this position. See the important links above for the official notification and how to apply.`}
               </p>
             </div>
           )}
