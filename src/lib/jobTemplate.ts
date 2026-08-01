@@ -8,16 +8,15 @@ import { timestampToDateInput } from './format';
  * Export writes the SAME shape the importer reads, so the round trip works:
  * export -> edit (by hand or with an AI) -> import -> updates in place.
  *
- * The category list is not hardcoded into the prompt and field guide.
- * Categories are editable, so the real ids are passed in and the text is built
- * around them — otherwise the template would tell an AI to use four categories
- * that may have been renamed, and every row would be rejected.
+ * The category list is not hardcoded. Categories are editable, so the real ids
+ * are passed in and the text is built around them — otherwise the template
+ * would name categories that may have been renamed and every row would be
+ * rejected.
  *
- * CHANGED: the prompt now states which fields are FREE and which are PAID.
- * Without that, an AI has no way to know that customSections ARE the product,
- * and it produces sections like "Important Dates" that merely restate the free
- * date fields. Those show up in the paywall manifest as things to buy, which
- * makes a listing look padded at the exact moment the reader is deciding.
+ * CHANGED: the prompt now describes the SELLABILITY FILTER as well as the
+ * free/paid split. A section whose title restates a free field, or which is
+ * too vague or too short, is dropped from the paywall manifest silently. An AI
+ * that does not know that will keep writing sections that quietly vanish.
  */
 
 /** The four ids that exist on a fresh install, used when no list is supplied. */
@@ -29,7 +28,8 @@ function categoryList(ids?: string[]): string {
 }
 
 /**
- * Paste this to an AI along with the template file.
+ * Paste this to an AI along with the template file, or with an export of your
+ * real jobs when refreshing existing content.
  *
  * @param categoryIds The portal's real category ids, so the AI is told the
  *   actual options rather than the original four.
@@ -42,7 +42,9 @@ markdown code fences.
 
 FREE VERSUS PAID — READ THIS FIRST.
 This portal has a paywall, and where you put information decides whether a
-reader sees it for free or has to pay for it.
+reader sees it for free or has to pay for it. The split is enforced on the
+server: paid fields are removed from the response entirely for a reader without
+a subscription, so anything you put in them is genuinely hidden.
 
   FREE, shown to everyone:
     title, category, companyName, companyLogo, location, salary, experience,
@@ -52,26 +54,46 @@ reader sees it for free or has to pay for it.
   PAID, shown only to subscribers:
     examDetails, studyMaterial, customSections, linkButtons
 
-  A free reader sees the TITLE of every custom section but not its content, so
-  those titles are effectively the sales pitch for the listing.
+A reader without a subscription sees a panel listing WHAT a listing contains —
+"Exam pattern and details", "Study material", the TITLE of each custom section,
+and a count of official links. That panel is the entire sales pitch, so the
+titles you choose decide whether anyone pays.
 
-Rules that follow from that:
+THE SELLABILITY FILTER — the part most files get wrong.
+A custom section is DROPPED from that panel, silently, in three cases:
+
+  1. Its title contains any of: date, dates, timeline, schedule, eligibility,
+     age, qualification, qualifications, educational, salary, pay scale,
+     location, work mode, experience, note, notes, disclaimer, attention,
+     caution, warning.
+     All of these either restate a field the reader already has for free, or
+     advertise a caveat. A paid row promising "Important Dates" sits on the same
+     screen as the free dates, and the only conclusion available to the reader
+     is that the paywall is padded.
+
+  2. Its title is a bare generic word on its own: Post, Posts, Detail, Details,
+     Other, Others, Info, Information, General, Misc, About, Summary, Overview,
+     Content, Data. A LONGER title containing one of those words is fine —
+     "Post Details and Vacancies" is kept, "Post" is not.
+
+  3. Its content is under 25 characters. A perfect title with "05 posts"
+     underneath it is a label, not a section.
+
+Dropped sections still render in full for a paying subscriber. They are simply
+not advertised as reasons to buy. So a dropped section is not lost — it just
+does no work for you.
+
+Rules that follow from all of the above:
 - NEVER put information into customSections that already has a free field.
-  In particular, do NOT create a section called "Important Dates", "Key Dates",
-  "Timeline", "Eligibility", "Age Limit" or "Qualification". Every one of those
-  restates something the reader can already see, and a paid row promising dates
-  that are printed further up the same page destroys trust.
-- Do NOT put disclaimers, caveats or "please verify against the official
-  advertisement" notes into customSections. Paywalling a caveat looks like
-  hiding the small print. Put such a note at the END of
-  educationalQualification, which is free, or leave it out.
-- customSections are for SUBSTANTIVE preparation content that has no dedicated
+- Do NOT put disclaimers or "verify against the official advertisement" notes
+  into customSections. Put such a note at the END of educationalQualification,
+  which is free.
+- customSections are for SUBSTANTIVE preparation content with no dedicated
   field: selection process, vacancy or post-wise breakdown, syllabus detail,
   application fee structure, physical or medical standards, exam centre lists,
   reservation breakup, document checklist.
-- Give each section a SPECIFIC title. "Selection Process" and "Physical
-  Standards" tell a reader something they want; "Additional Information" and
-  "Other Details" tell them nothing and read as filler.
+- Give each section a SPECIFIC title and at least two or three real sentences
+  of content.
 - FEWER REAL SECTIONS BEAT MORE PADDING. If a posting genuinely has no
   preparation depth — many private-sector roles do not — return no
   customSections at all. An empty promise behind a paywall is worse than no
@@ -84,8 +106,9 @@ Remaining rules:
   a company name.
 - refCode: a short stable lowercase slug identifying the posting, built from
   organisation + role + year, e.g. "ssc-cgl-2026" or "ibps-po-2026-mains".
-  ALWAYS include it. Re-importing the same refCode updates that job instead of
-  creating a duplicate, so keep it identical for the same posting.
+  ALWAYS include it, and when editing an EXPORTED file keep every refCode
+  exactly as it came out — that is what makes a row update the existing job
+  instead of creating a duplicate.
 - Dates must be "YYYY-MM-DD". Omit the field if unknown.
 - category: exactly one of ${categoryList(categoryIds)}. Use the id exactly as
   written. A row with an unknown category is rejected on import.
@@ -113,7 +136,7 @@ export const AI_PROMPT = buildAiPrompt();
 
 function buildFieldGuide(categoryIds?: string[]): Record<string, string> {
   return {
-    refCode: 'REQUIRED. Stable lowercase slug, e.g. "ssc-cgl-2026". Re-importing the same refCode updates that job instead of duplicating it.',
+    refCode: 'REQUIRED. Stable lowercase slug, e.g. "ssc-cgl-2026". Re-importing the same refCode updates that job instead of duplicating it. When editing an EXPORTED file, never change these.',
     title: 'FREE. REQUIRED for new jobs. Full posting title.',
     category: 'FREE. REQUIRED for new jobs. One of: ' + categoryList(categoryIds) + '. Use the id exactly as written — an unknown category is rejected.',
     companyName: 'FREE. Organisation or company name.',
@@ -131,7 +154,7 @@ function buildFieldGuide(categoryIds?: string[]): Record<string, string> {
     educationalQualification: 'FREE. Rich text. Also free for the same reason. Put any "verify against the official advertisement" caveat at the end of this field rather than in a paid section.',
     examDetails: 'PAID. Rich text. Exam pattern, marks, duration, negative marking. This is the description of the exam, not its date — the date goes in examDate.',
     studyMaterial: 'PAID. Rich text. Preparation resources, book lists, previous papers.',
-    customSections: 'PAID. List of { "title", "content" }. Titles ARE shown to free users as the sales pitch, so make them specific. Use ONLY for substantive prep content with no dedicated field — selection process, vacancy breakdown, fee structure, physical standards. NEVER restate dates or eligibility here, and never add filler: no real sections is better than padding.',
+    customSections: 'PAID. List of { "title", "content" }. Titles are the paywall sales pitch, BUT a section is dropped from that pitch when its title restates a free field (date, eligibility, age, qualification, salary, location, experience, note, disclaimer...), when its title is a bare generic word on its own (Post, Details, Other, Summary...), or when its content is under 25 characters. Dropped sections still render for subscribers — they just stop selling. Use for substantive prep content only: selection process, vacancy breakdown, fee structure, physical standards.',
     linkButtons: 'PAID. List of { "text", "url", "bgColor", "textColor" }. Colours are optional and default to the site purple. url must be https://, mailto: or tel: and must contain the URL only.',
     onHold: 'true or false. OPTIONAL, and normally left out. Marks a listing whose dates have passed but which should stay out of the Expired tab (result pending, counselling under way). LEAVING IT OUT NEVER CHANGES A JOB\'S HOLD STATE, in merge or replace mode — to release jobs in bulk you must say "onHold": false explicitly. Setting it to true REQUIRES holdLabel in the same entry.',
     holdLabel: 'REQUIRED when onHold is true. SHOWN PUBLICLY on the job card in place of the usual status line, e.g. "Result awaited" or "Interview stage". Keep it under ' + String(60) + ' characters — longer labels are shortened. Do not put anything private here.',
@@ -159,13 +182,15 @@ const EXAMPLE_JOBS: Record<string, unknown>[] = [
     examDate: '2026-09-15',
     ageLimit: '18 to 32 years as on 01/08/2026.\nAge relaxation: SC/ST 5 years, OBC 3 years, PwD 10 years.',
     // The caveat lives here, in a FREE field. Paywalling a disclaimer reads as
-    // hiding the small print.
+    // hiding the small print — and a section titled "Please Note" would be
+    // dropped from the sales panel anyway.
     educationalQualification: "Bachelor's degree in any discipline from a recognised university.\nFinal-year students may apply provided they produce proof of passing before the document verification stage.\n\nPlease verify all requirements against the official notification before applying.",
     examDetails: '<b>Tier 1</b> - Objective, 100 questions, 200 marks, 60 minutes.<br><b>Tier 2</b> - Paper I compulsory for all posts.<br>Negative marking of 0.50 marks per wrong answer in Tier 1.',
     studyMaterial: '<ul><li>Previous 10 years solved papers</li><li>NCERT Mathematics classes 8-10</li><li>Daily current affairs for the last 12 months</li></ul>',
-    // Both sections are substantive and have no dedicated field. Note what is
-    // ABSENT: no "Important Dates" section, because the four date fields above
-    // already cover it and are shown free.
+    // Both titles are specific, neither contains a filtered word, and both have
+    // well over 25 characters of content — so both appear in the sales panel.
+    // Note what is ABSENT: no "Important Dates" section, because the four date
+    // fields above already cover it and are free.
     customSections: [
       {
         title: 'Selection Process',
@@ -198,9 +223,9 @@ const EXAMPLE_JOBS: Record<string, unknown>[] = [
     // the other half of the rule.
     ageLimit: 'No specific age limit.',
     educationalQualification: 'B.E. / B.Tech / M.C.A. with a minimum of 60% aggregate and no active backlogs.',
-    // ONE real section, not three padded ones. A private-sector role with no
-    // exam has little to sell beyond this, and that is fine — inventing filler
-    // to fatten the paywall manifest is what loses trust.
+    // ONE real section with real content, not three padded ones. A
+    // private-sector role with no exam has little to sell beyond this, and that
+    // is fine — inventing filler to fatten the paywall panel is what loses trust.
     customSections: [
       {
         title: 'Interview Rounds',
@@ -222,9 +247,10 @@ export function buildTemplateFile(categoryIds?: string[]): string {
         'Replace the two example entries in "jobs" with your real jobs, then import this file.',
         'You can also paste this whole file to an AI along with the prompt in "_aiPrompt".',
         'Fields not listed in "_fields" are ignored. id, createdAt and createdBy are set automatically.',
-        'Export uses this exact same shape, so the round trip works: export, edit, re-import, and matching jobs update in place instead of duplicating.',
-        'FREE VERSUS PAID: title, category, company, location, salary, experience, work mode, skills, all four dates, ageLimit and educationalQualification are shown to EVERYONE. examDetails, studyMaterial, customSections and linkButtons are shown only to subscribers. Free readers do see the TITLE of every custom section, so those titles act as the sales pitch.',
-        'NEVER restate a free field inside customSections. A section called "Important Dates" or "Eligibility" promises, behind a paywall, information printed further up the same page — which makes the listing look padded exactly when the reader is deciding whether to pay.',
+        'TO REFRESH YOUR EXISTING JOBS: export them from Manage Jobs, hand that file to an AI together with "_aiPrompt" from here, and import the result. The export uses this exact shape and already carries each job\'s refCode, so rows update in place. Never rewrite a refCode — that is what turns an update into a duplicate.',
+        'FREE VERSUS PAID: title, category, company, location, salary, experience, work mode, skills, all four dates, ageLimit and educationalQualification are shown to EVERYONE. examDetails, studyMaterial, customSections and linkButtons are shown only to subscribers, and are removed from the response entirely for anyone else.',
+        'THE PAYWALL PANEL: a reader without a subscription sees a list of what a listing contains — the title of each custom section, whether exam details and study material exist, and how many official links there are. Those titles are the sales pitch.',
+        'SECTIONS CAN BE DROPPED FROM THAT PANEL. A custom section does not appear when its title restates a free field (containing date, eligibility, age, qualification, salary, location, experience, note, disclaimer and similar), when its title is a bare generic word on its own ("Post", "Details", "Other", "Summary"), or when its content is under 25 characters. Dropped sections still render in full for a subscriber — they simply stop doing any selling.',
         'HOW EXPIRY WORKS: a listing stays live until its examDate when one is set, otherwise until its applicationEndDate. Both days are inclusive. Set examDate on any recruitment decided by an exam and the listing will survive the application deadline instead of expiring on it.',
         'HOLD IS NEVER CLEARED BY OMISSION. A job put On Hold in the admin panel stays held no matter what you import, unless an entry says "onHold": false. That is true in replace mode too, where every other missing field IS cleared - a bulk content refresh must not be able to release a hold by accident. To release in bulk, add "onHold": false to those entries.',
         'MERGE MODE ONLY WRITES FIELDS YOU INCLUDE. To REMOVE bad custom sections from an existing job you must send "customSections" with the corrected array — omitting it leaves the old ones in place.',
@@ -274,8 +300,7 @@ export function jobToExportRow(job: Job): Record<string, unknown> {
    * Writing "onHold": false on every ordinary row would be noise on an export
    * of 200 jobs, and worse, re-importing it would take the explicit-release
    * path on every single one — pointless writes that also reset holdLabel and
-   * heldAt. Omitting it means an unheld job round-trips as a no-op, which is
-   * what it should be.
+   * heldAt. Omitting it means an unheld job round-trips as a no-op.
    *
    * When the job IS held, both onHold and holdLabel are written together,
    * because the importer rejects one without the other. heldAt rides along for
@@ -287,6 +312,13 @@ export function jobToExportRow(job: Job): Record<string, unknown> {
     put('holdNote', job.holdNote);
     put('heldAt', job.heldAt);
   }
+  /**
+   * NOTE ON `locked` AND `contentSummary`: api/jobs.ts attaches both to every
+   * job it returns, so they are present on the objects ManageJobs holds. They
+   * are deliberately NOT emitted here — this function builds from an explicit
+   * field list, so server-supplied display state can never leak into a file and
+   * come back as a stored field on re-import.
+   */
   return row;
 }
 

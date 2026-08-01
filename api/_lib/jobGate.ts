@@ -7,9 +7,6 @@
  * what makes it real: /api/jobs decides entitlement here and strips the paid
  * fields before the response is ever serialised.
  *
- * It also replaces the client-side isPremiumJob(). The lock decision now runs
- * where a user cannot reach it.
- *
  * No imports from src/ on purpose. This is bundled into a serverless function,
  * and a stray import of anything touching React or the Firebase web SDK would
  * drag half the frontend into it.
@@ -55,9 +52,6 @@ export interface ContentRow {
  *
  * Currently true while the listings are being filled out with proper exam
  * patterns and study material. Flip to false once that work is done.
- *
- * NOTE: this moved here from src/lib/access.ts. Changing it now requires a
- * deploy rather than just a rebuild, because it runs on the server.
  */
 const LOCK_EVERYTHING = true;
 
@@ -76,11 +70,30 @@ const MIN_SECTION_CHARS = 25;
  *
  * NOT A BENEFIT — "Please Note" is a caveat. Advertising a disclaimer as part
  * of what you get reads as hiding the small print.
+ *
+ * WIDENED. Real listings produced three titles the first pass missed, each
+ * restating something already on screen for free:
+ *   "Current Stage"              -> the stage line, shown on the card AND at
+ *                                   the top of the detail page
+ *   "Application Window (closed)" -> the application dates in Key Information
+ *   "Vacancies"                   -> only ever a count; the substance belongs
+ *                                   in a titled breakdown, not a bare number
+ * The pattern is unanchored, so any title CONTAINING one of these words is
+ * dropped — "Application Window (closed)" is caught by both `application` and
+ * `window`.
  */
-const UNSELLABLE_TITLE = /\b(dates?|timeline|schedule|eligibility|age|qualifications?|educational|salary|pay\s*scale|location|work\s*mode|experience|notes?|disclaimer|attention|caution|warning)\b/i;
+const UNSELLABLE_TITLE = /\b(dates?|deadlines?|timeline|schedule|window|application|apply|stage|status|current|closed|open|live|eligibility|age|qualifications?|educational|salary|pay\s*scale|stipend|location|venue|work\s*mode|experience|vacanc(y|ies)|posts?\s*count|notes?|disclaimer|attention|caution|warning|important)\b/i;
 
-/** Anchored to the WHOLE title, so "Post Details and Vacancies" still passes. */
-const VAGUE_TITLE = /^(post|posts|detail|details|other|others|info|information|general|misc|miscellaneous|about|summary|overview|content|data)$/i;
+/**
+ * Titles too vague to want, matched against the WHOLE title.
+ *
+ * "Post Details and Vacancies" is not caught here — but it IS caught by
+ * UNSELLABLE_TITLE above, on `vacancies`. That is the correct outcome: a
+ * vacancy count is a fact, not preparation. A section that genuinely breaks
+ * down posts should be titled for what it teaches — "Post-wise Reservation
+ * Breakup", "Department Allocation" — which passes both patterns.
+ */
+const VAGUE_TITLE = /^(post|posts|detail|details|other|others|info|information|general|misc|miscellaneous|about|summary|overview|content|data|update|updates)$/i;
 
 /** How much real prose a rich-text field carries, tags and entities removed. */
 export function richTextLength(html?: unknown): number {

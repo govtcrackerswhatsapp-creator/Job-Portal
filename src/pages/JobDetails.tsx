@@ -109,13 +109,7 @@ export default function JobDetails() {
   /**
    * NO REDIRECT, AND NO CLIENT-SIDE DECISION.
    *
-   * This page used to bounce every non-subscriber to /subscribe, losing the
-   * listing they were interested in and replacing a concrete question with an
-   * abstract one. Then it rendered the free half and decided the lock itself —
-   * which still meant the paid content was sitting in the browser, hidden by a
-   * conditional.
-   *
-   * Now api/jobs.ts deletes examDetails, studyMaterial, customSections and
+   * api/jobs.ts deletes examDetails, studyMaterial, customSections and
    * linkButtons from the payload for anyone not entitled to them, and sends
    * `locked` plus `contentSummary` instead. The guards below are presentation,
    * not protection: on a locked job there is simply nothing to render.
@@ -134,8 +128,6 @@ export default function JobDetails() {
   const stage = getJobStage(job);
 
   // Button URLs go through the same allow-list as links inside rich text.
-  // Without this a protocol-less "www.ssc.nic.in" resolves as a RELATIVE path
-  // (so the button 404s) and a javascript: URL would render as a live link.
   // Empty for a locked job — the server never sent linkButtons.
   const linkButtons = (job.linkButtons || [])
     .map((b) => ({ ...b, url: safeUrl(b.url || '') }))
@@ -289,42 +281,55 @@ export default function JobDetails() {
           {/* ---- Or, when locked, ONE panel describing what is behind the gate.
                   Rows come from the server, which builds them fresh on every
                   request — so the manifest can never drift out of step with the
-                  content, and it never carries a word of it. ---- */}
+                  content, and it never carries a word of it.
+
+                  The panel is deliberately the loudest thing on the page: a red
+                  hairline border, a tinted header strip and red row labels. It
+                  was previously plain dark text on white and read as ordinary
+                  content, so a free user's eye slid straight past the one block
+                  that exists to be noticed. ---- */}
           {locked && lockedRows.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
-              <div className="flex items-center gap-2 mb-1">
-                <Lock className="w-5 h-5 text-[#8b2df2] shrink-0" />
-                <h2 className="font-heading text-base font-semibold text-zinc-900">What's inside this listing</h2>
-              </div>
-              <p className="text-sm text-zinc-500 mb-4">
-                {lockedRows.length} {lockedRows.length === 1 ? 'section' : 'sections'} prepared for this posting
-              </p>
-
-              <div className="border-t border-zinc-100">
-                {lockedRows.map((row, i) => {
-                  const RowIcon = ROW_ICON[row.kind] || Info;
-                  return (
-                    <div key={i} className={`flex items-center justify-between gap-3 py-3 ${i < lockedRows.length - 1 ? 'border-b border-zinc-100' : ''}`}>
-                      <span className="inline-flex items-center gap-2.5 min-w-0 text-sm text-zinc-800">
-                        <RowIcon className="w-4 h-4 text-zinc-400 shrink-0" />
-                        <span className="truncate">{row.label}</span>
-                      </span>
-                      <span className="text-xs text-zinc-400 whitespace-nowrap shrink-0">{row.note}</span>
-                    </div>
-                  );
-                })}
+            <div className="bg-white rounded-2xl shadow-soft border border-red-200 overflow-hidden">
+              <div className="bg-red-50 border-b border-red-100 px-5 sm:px-6 py-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Lock className="w-5 h-5 text-red-600 shrink-0" />
+                  <h2 className="font-heading text-base font-semibold text-red-700">Locked — what's inside this listing</h2>
+                </div>
+                <p className="text-sm text-red-600/80">
+                  {lockedRows.length} {lockedRows.length === 1 ? 'section' : 'sections'} prepared for this posting
+                </p>
               </div>
 
-              {/* A single CTA. Repeating an upgrade button beside every locked
-                  row reads as desperate and stops being seen after the third. */}
-              <div className="mt-4 pt-4 border-t border-zinc-100 flex items-center justify-between gap-3 flex-wrap">
-                <p className="text-sm text-zinc-500">Unlocks this and every other listing</p>
-                <button
-                  onClick={() => navigate('/subscribe')}
-                  className="inline-flex items-center gap-2 bg-gradient-to-r from-[#8b2df2] to-[#00b4d8] text-white rounded-xl px-5 py-2.5 text-sm font-semibold shadow-soft hover:opacity-90 transition"
-                >
-                  Unlock full details <ArrowRight className="w-4 h-4 shrink-0" />
-                </button>
+              <div className="px-5 sm:px-6 pt-1 pb-5 sm:pb-6">
+                <div>
+                  {lockedRows.map((row, i) => {
+                    const RowIcon = ROW_ICON[row.kind] || Info;
+                    return (
+                      <div key={i} className={`flex items-center justify-between gap-3 py-3 ${i < lockedRows.length - 1 ? 'border-b border-zinc-100' : ''}`}>
+                        <span className="inline-flex items-center gap-2.5 min-w-0 text-sm font-semibold text-red-600">
+                          <RowIcon className="w-4 h-4 text-red-500 shrink-0" />
+                          <span className="truncate">{row.label}</span>
+                        </span>
+                        {/* Kept muted on purpose. If the note were red too the
+                            row would have no hierarchy and the label — the part
+                            that does the selling — would stop leading. */}
+                        <span className="text-xs text-zinc-400 whitespace-nowrap shrink-0">{row.note}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* A single CTA. Repeating an upgrade button beside every locked
+                    row reads as desperate and stops being seen after the third. */}
+                <div className="mt-4 pt-4 border-t border-zinc-100 flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-sm text-zinc-500">Unlocks this and every other listing</p>
+                  <button
+                    onClick={() => navigate('/subscribe')}
+                    className="inline-flex items-center gap-2 bg-gradient-to-r from-[#8b2df2] to-[#00b4d8] text-white rounded-xl px-5 py-2.5 text-sm font-semibold shadow-soft hover:opacity-90 transition"
+                  >
+                    Unlock full details <ArrowRight className="w-4 h-4 shrink-0" />
+                  </button>
+                </div>
               </div>
             </div>
           )}
