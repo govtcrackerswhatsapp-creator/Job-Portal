@@ -13,7 +13,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
 import Razorpay from 'razorpay';
-import { grantSubscription, parseNotes } from './_lib/grant';
+import { grantSubscription, parseNotes } from './_lib/grant.js';
 
 // The signature is computed over the exact bytes Razorpay sent, so the body must
 // not be re-serialised before verification.

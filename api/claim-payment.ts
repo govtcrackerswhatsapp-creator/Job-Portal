@@ -17,7 +17,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
 import Razorpay from 'razorpay';
-import { grantSubscription, parseNotes } from './_lib/grant';
+import { grantSubscription, parseNotes } from './_lib/grant.js';
 
 function safeEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a);

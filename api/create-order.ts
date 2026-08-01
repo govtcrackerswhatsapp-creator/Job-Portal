@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Razorpay from 'razorpay';
-import { adminAuth } from './_lib/grant';
+import { adminAuth } from './_lib/grant.js';
 
 const FIREBASE_PROJECT_ID = 'job-portal-b0c35';
 const FIREBASE_API_KEY = 'AIzaSyCqrCmNWXvd7PzWSUYCugbHMpIIsKLClms';
