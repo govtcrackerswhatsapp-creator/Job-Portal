@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { auth } from '../lib/firebase';
 import { getPlans } from '../lib/plansData';
-import { grantAccess } from '../lib/subscription';
+import { claimAccess } from '../lib/subscription';
 import { SubscriptionPlan, PlanTier } from '../types';
 import { formatRupees } from '../lib/format';
 import { Check, Loader2, ArrowLeft, Sparkles, Crown } from 'lucide-react';
@@ -54,7 +55,7 @@ export default function Subscription() {
 
   const showToast = (type: 'ok' | 'err', msg: string) => {
     setToast({ type, msg });
-    setTimeout(() => setToast(null), 5000);
+    setTimeout(() => setToast(null), 6000);
   };
 
   const anyAnnual = plans.some((p) => p.annualPrice != null);
@@ -87,6 +88,12 @@ export default function Subscription() {
     return pct > 0 ? `${formatRupees(Math.round(perMonth))}/mo · save ${pct}%` : `${formatRupees(Math.round(perMonth))}/mo`;
   };
 
+  // A full reload is deliberate: it re-reads the user profile from Firestore so
+  // the new expiry is reflected everywhere, which an in-app navigate would not do.
+  const goToDashboard = (delayMs: number) => {
+    setTimeout(() => { window.location.assign('/dashboard'); }, delayMs);
+  };
+
   const handleSubscribe = async (plan: SubscriptionPlan) => {
     if (!user) return;
     const tier = chosenTier(plan); // undefined for non-tier plans
@@ -94,15 +101,20 @@ export default function Subscription() {
       setProcessing(plan.id || '');
 
       const ok = await loadRazorpay();
-      if (!ok) { showToast('err', 'Could not load payment gateway. Try again.'); return; }
+      if (!ok) { showToast('err', 'Could not load payment gateway. Try again.'); setProcessing(null); return; }
+
+      // Proves to the server who is buying. The server stamps this identity onto
+      // the Razorpay order, and that is what the webhook later trusts.
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) { showToast('err', 'Your session expired. Please sign in again.'); setProcessing(null); return; }
 
       const orderResp = await fetch('/api/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId: plan.id, billingCycle: cycle, tierId: tier?.id }),
+        body: JSON.stringify({ planId: plan.id, billingCycle: cycle, tierId: tier?.id, idToken }),
       });
       const order = await orderResp.json();
-      if (!orderResp.ok || !order.id) { showToast('err', order.error || 'Could not start payment.'); return; }
+      if (!orderResp.ok || !order.id) { showToast('err', order.error || 'Could not start payment.'); setProcessing(null); return; }
 
       const keyId = import.meta.env.VITE_RAZORPAY_KEY_ID as string;
 
@@ -115,39 +127,43 @@ export default function Subscription() {
         order_id: order.id,
         prefill: { email: user.email, name: user.name || '' },
         theme: { color: '#8b2df2' },
+        // Mirror the order notes onto the payment entity so the webhook usually
+        // resolves the buyer without a second API call to fetch the order.
+        notes: {
+          uid: user.uid,
+          planId: plan.id || '',
+          planLabel: order.planLabel || plan.name,
+          days: String(order.verifiedDays ?? plan.durationInDays),
+          email: user.email || '',
+        },
         handler: async (response: any) => {
-          try {
-            const verifyResp = await fetch('/api/verify-payment', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(response),
-            });
-            const verify = await verifyResp.json();
-            if (!verify.success) { showToast('err', 'Payment could not be verified. Contact support.'); return; }
+          // Fast path only. If any of this fails the webhook still grants access,
+          // so the customer is never left stranded the way they were before.
+          showToast('ok', 'Payment received. Activating your access…');
+          const result = await claimAccess(response);
 
-            await grantAccess(user, plan, cycle, {
-              orderId: response.razorpay_order_id,
-              paymentId: response.razorpay_payment_id,
-              amount: order.verifiedAmount ?? priceFor(plan),
-              contact: verify.contact,
-              verifiedDays: order.verifiedDays,
-              planLabel: tier ? `${plan.name} — ${tier.label}` : undefined,
-            });
-
-            showToast('ok', 'Payment successful! Access unlocked. Redirecting…');
-            setTimeout(() => navigate('/dashboard'), 1500);
-          } catch (e) {
-            console.error('Post-payment error:', e);
-            showToast('err', 'Payment succeeded but activation failed. Contact support with your payment ID.');
+          if (result.ok) {
+            showToast('ok', 'Access unlocked. Redirecting…');
+            goToDashboard(1200);
+          } else {
+            console.error('claim failed, relying on webhook:', result.error);
+            showToast('ok', 'Payment received. Finishing activation — this page will refresh.');
+            goToDashboard(6000);
           }
         },
         modal: { ondismiss: () => setProcessing(null) },
       });
+
+      rzp.on('payment.failed', (resp: any) => {
+        console.error('payment.failed', resp?.error);
+        showToast('err', resp?.error?.description || 'Payment failed. No money was taken.');
+        setProcessing(null);
+      });
+
       rzp.open();
     } catch (e) {
       console.error('Subscribe error:', e);
       showToast('err', 'Something went wrong. Please try again.');
-    } finally {
       setProcessing(null);
     }
   };

@@ -12,6 +12,7 @@
   "dependencies": {
     "date-fns": "^4.4.0",
     "firebase": "^12.15.0",
+    "firebase-admin": "^13.0.0",
     "lucide-react": "^0.546.0",
     "razorpay": "^2.9.6",
     "react": "^19.0.1",

@@ -1,11 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Razorpay from 'razorpay';
+import { adminAuth } from './_lib/grant';
 
 const FIREBASE_PROJECT_ID = 'job-portal-b0c35';
 const FIREBASE_API_KEY = 'AIzaSyCqrCmNWXvd7PzWSUYCugbHMpIIsKLClms';
 
 interface Tier { id: string; label: string; days: number; price: number; }
-interface Plan { price: number; annualPrice: number | null; durationInDays: number; tiers: Tier[]; }
+interface Plan { name: string; price: number; annualPrice: number | null; durationInDays: number; tiers: Tier[]; }
 
 // Firestore REST returns numbers as either integerValue (string) or doubleValue.
 function numFrom(field: any): number | null {
@@ -27,6 +28,7 @@ async function getPlan(planId: string): Promise<Plan | null> {
   const price = numFrom(fields.price);
   const annual = numFrom(fields.annualPrice);
   const durationInDays = numFrom(fields.durationInDays) ?? 30;
+  const name = fields.name?.stringValue ?? 'Subscription';
   if (price == null) return null;
 
   // Parse the optional tiers array. Firestore encodes an array as
@@ -47,15 +49,31 @@ async function getPlan(planId: string): Promise<Plan | null> {
     }
   }
 
-  return { price, annualPrice: annual, durationInDays, tiers };
+  return { name, price, annualPrice: annual, durationInDays, tiers };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { planId, billingCycle, tierId } = req.body || {};
+    const { planId, billingCycle, tierId, idToken } = req.body || {};
     if (!planId) return res.status(400).json({ error: 'Missing planId' });
+
+    // WHO is buying. Taken from a verified Firebase ID token, never from a
+    // client-sent uid — this value is stamped onto the order and is what the
+    // webhook later trusts to decide whose account to activate.
+    if (!idToken || typeof idToken !== 'string') {
+      return res.status(401).json({ error: 'Please sign in again and retry.' });
+    }
+    let uid: string;
+    let tokenEmail: string | null = null;
+    try {
+      const decoded = await adminAuth().verifyIdToken(idToken);
+      uid = decoded.uid;
+      tokenEmail = decoded.email ?? null;
+    } catch {
+      return res.status(401).json({ error: 'Your session expired. Sign in again and retry.' });
+    }
 
     const plan = await getPlan(planId);
     if (!plan) return res.status(400).json({ error: 'Invalid plan' });
@@ -63,6 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Server decides the real amount AND the real duration. Never trust a client-sent price.
     let amount: number;
     let days: number;
+    let planLabel: string;
 
     if (tierId) {
       // Tier purchase: the tier MUST exist on this plan. If it does not, reject —
@@ -72,11 +91,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!tier) return res.status(400).json({ error: 'Invalid or unknown plan tier' });
       amount = tier.price;
       days = tier.days;
+      planLabel = `${plan.name} — ${tier.label}`;
     } else {
       // No tier sent: original monthly/annual behaviour, unchanged.
       const isAnnual = billingCycle === 'annual' && plan.annualPrice != null;
       amount = isAnnual ? (plan.annualPrice as number) : plan.price;
       days = isAnnual ? 365 : plan.durationInDays;
+      planLabel = plan.name;
     }
 
     if (!amount || amount < 1) return res.status(400).json({ error: 'Invalid plan amount' });
@@ -90,9 +111,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       amount: Math.round(amount * 100), // paise
       currency: 'INR',
       receipt: `rcpt_${Date.now()}`.slice(0, 40),
+      // The identity of the purchase, decided here on the server and carried by
+      // Razorpay all the way to the webhook. Razorpay note values must be strings.
+      notes: {
+        uid,
+        planId: String(planId),
+        planLabel,
+        days: String(days),
+        email: tokenEmail || '',
+      },
     });
 
-    return res.status(200).json({ ...order, verifiedAmount: amount, verifiedDays: days });
+    return res.status(200).json({ ...order, verifiedAmount: amount, verifiedDays: days, planLabel });
   } catch (error: any) {
     console.error('create-order error:', error?.message || error);
     return res.status(500).json({ error: error?.message || 'Failed to create order' });
