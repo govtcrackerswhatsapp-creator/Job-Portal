@@ -251,7 +251,23 @@ export default function ManageJobs() {
    */
   const deletableHeld = filteredHeld.filter((j) => j.id && canDelete(j));
 
-  const selectable = view === 'expired' ? deletableExpired : view === 'hold' ? deletableHeld : [];
+  /**
+   * Active jobs are selectable too.
+   *
+   * They were excluded, which left deleting a live listing as a one-at-a-time
+   * job — painful after a bad bulk import, and the reason three duplicate
+   * listings sat around. Selection is safe here because it is explicit: you
+   * tick what goes.
+   *
+   * What Active deliberately does NOT get is the "Delete All" sweep. That
+   * button stays gated to the Expired tab below. An expired listing is already
+   * dead; an active one is on the dashboard right now, so removing it should
+   * always cost you the effort of ticking boxes.
+   */
+  const deletableActive = filteredActive.filter((j) => j.id && canDelete(j));
+
+  const selectable =
+    view === 'active' ? deletableActive : view === 'expired' ? deletableExpired : deletableHeld;
   const allSelected = selectable.length > 0 && selectable.every((j) => selectedIds.includes(j.id!));
 
   const toggleSelect = (id?: string) => {
@@ -590,7 +606,13 @@ export default function ManageJobs() {
     }
   };
 
-  const handleDeleteSelected = () => deleteMany(selectedIds, 'selected job(s)');
+  /**
+   * Says "live job(s)" on the Active tab. "Delete 40 selected job(s)?" reads
+   * identically whether those are dead listings or the ones your users are
+   * looking at, and that is the one place the wording should not be neutral.
+   */
+  const handleDeleteSelected = () =>
+    deleteMany(selectedIds, view === 'active' ? 'live job(s)' : 'selected job(s)');
   const handleBulkDeleteExpired = () => deleteMany(deletableExpired.map((j) => j.id!), 'expired job(s)');
 
   return (
@@ -1049,7 +1071,7 @@ export default function ManageJobs() {
                 const stage = getJobStage(job);
                 return (
                   <div key={job.id} className={`bg-white rounded-2xl shadow-soft p-4 sm:p-5 flex items-start justify-between gap-4 ${job.id && selectedIds.includes(job.id) ? 'ring-2 ring-red-300' : ''}`}>
-                    {view !== 'active' && canDelete(job) && (
+                    {canDelete(job) && (
                       <input
                         type="checkbox"
                         checked={!!job.id && selectedIds.includes(job.id)}
