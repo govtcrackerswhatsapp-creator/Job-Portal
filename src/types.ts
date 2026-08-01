@@ -21,11 +21,28 @@ export type WorkMode = 'onsite' | 'hybrid' | 'remote';
  * Whether a listing sits behind the paywall.
  *
  * 'auto' (the default, and what every existing job means by omitting the field)
- * derives the answer from the content itself — see isPremiumJob() in lib/access.
- * 'paid' and 'free' are manual overrides for the cases where a human disagrees
- * with the rule.
+ * derives the answer from the content itself. 'paid' and 'free' are manual
+ * overrides for the cases where a human disagrees with the rule.
+ *
+ * The decision itself runs on the SERVER now — api/_lib/jobGate.ts — so a user
+ * cannot reach it. This field is the only input a document contributes.
  */
 export type JobAccessTier = 'auto' | 'paid' | 'free';
+
+/**
+ * One advertised item in the locked panel, supplied by /api/jobs.
+ *
+ * Describes the SHAPE of what a subscription unlocks, never the content. A free
+ * reader learns that a listing has study material and a "Selection process"
+ * section; they do not receive a single word of either.
+ */
+export type ContentRowKind = 'exam' | 'study' | 'section' | 'links';
+
+export interface ContentRow {
+  kind: ContentRowKind;
+  label: string;
+  note: string;
+}
 
 /**
  * One selectable job category, managed from Admin -> Categories.
@@ -105,10 +122,23 @@ export interface Job {
    */
   examDate?: number | null;
   educationalQualification: string;
+
+  /**
+   * ---- PAID FIELDS ----
+   *
+   * These four are DELETED from the payload by /api/jobs for any caller
+   * without an active subscription — not blanked, removed. A free user's
+   * browser never holds them, which is what makes the paywall a boundary
+   * rather than a UI redirect.
+   *
+   * They are therefore absent far more often than they used to be. Never read
+   * one without checking `locked` first, or guard with isEmptyHtml().
+   */
   examDetails?: string;
   studyMaterial?: string;
   customSections?: JobSection[];
   linkButtons?: JobLinkButton[];
+
   companyName?: string;
   companyLogo?: string;
   salary?: string;
@@ -123,19 +153,31 @@ export interface Job {
    * Absent means 'auto', which is what every job written before this field
    * existed means — so nothing needs migrating.
    *
-   * Under 'auto' the lock is decided by the content, not by a setting: a job
-   * earns a paywall only when it carries exam details or study material with
-   * real substance. Everything else on a listing — title, dates, salary,
-   * eligibility, an apply link — is a fact anyone can find on the official
-   * notification in one search, so charging for it makes the subscription look
-   * like a trick and damages trust in the listings that ARE worth paying for.
-   *
-   * 'paid' and 'free' exist for the cases where that rule is wrong: a
-   * thoroughly researched selection process with no exam pattern deserves
-   * 'paid'; a two-line exam mention that would not survive scrutiny deserves
-   * 'free'.
+   * Under 'auto' the lock is decided by the content: a job earns a paywall only
+   * when it carries content worth charging for. Everything else on a listing —
+   * title, dates, salary, eligibility — is a fact anyone can find on the
+   * official notification in one search, so charging for it makes the
+   * subscription look like a trick and damages trust in the listings that ARE
+   * worth paying for.
    */
   accessTier?: JobAccessTier;
+
+  /**
+   * ---- SERVER-SUPPLIED, NEVER STORED ----
+   *
+   * Both are attached by /api/jobs at response time and must never be written
+   * back to Firestore. A stored `locked` would be a second source of truth able
+   * to disagree with the content, which is the failure the derived job-stage
+   * model was built to avoid.
+   *
+   * `locked` is true only when the caller is NOT entitled AND the listing has
+   * something worth gating. A subscriber always sees false; so does anyone
+   * looking at a listing that never earned a paywall.
+   */
+  locked?: boolean;
+
+  /** Present only when locked. What the panel advertises. */
+  contentSummary?: ContentRow[];
 
   /**
    * EDITORIAL HOLD.

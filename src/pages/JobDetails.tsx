@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { shouldLockJob, isSellableSection } from '../lib/access';
 import { getJob } from '../lib/jobsData';
 import { getCategories, labelForCategory, colorForCategory } from '../lib/categoriesData';
-import { Job, Category } from '../types';
+import { Job, Category, ContentRowKind } from '../types';
 import { categoryBadgeStyle, workModeLabel, formatDate } from '../lib/format';
 import { getJobStage, STAGE_TEXT_CLASS } from '../lib/jobStage';
 import { FormattedText, isEmptyHtml, safeUrl } from '../lib/richText';
@@ -17,6 +15,20 @@ function initials(name: string): string {
   if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
   return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
 }
+
+/**
+ * Maps a manifest row's kind to its icon.
+ *
+ * The server sends a kind rather than an icon name, because lucide components
+ * cannot cross a JSON boundary and hardcoding icon strings server-side would
+ * couple the API to whichever icon library the frontend happens to use.
+ */
+const ROW_ICON: Record<ContentRowKind, typeof Calendar> = {
+  exam: FileText,
+  study: BookOpen,
+  section: Info,
+  links: ExternalLink,
+};
 
 /** Short, single-line values (dates, salary, location...). */
 function SummaryItem({ icon: Icon, label, value }: { icon: typeof Calendar; label: string; value: string }) {
@@ -51,16 +63,8 @@ function RichItem({ icon: Icon, label, value }: { icon: typeof Calendar; label: 
   );
 }
 
-/** One row of the locked manifest: what exists, never what it says. */
-interface LockedRow {
-  icon: typeof Calendar;
-  label: string;
-  note: string;
-}
-
 export default function JobDetails() {
   const { id } = useParams();
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [job, setJob] = useState<Job | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -89,18 +93,6 @@ export default function JobDetails() {
     }
   };
 
-  /**
-   * NO REDIRECT.
-   *
-   * This page used to bounce every non-subscriber to /subscribe, which meant
-   * they lost the listing they were interested in and were asked an abstract
-   * question at the exact moment their interest was concrete.
-   *
-   * Now the free half renders for everyone, and the paid sections are replaced
-   * by a manifest of what sits behind the gate. shouldLockJob() decides, and
-   * the job card uses the same function, so the two cannot disagree.
-   */
-
   if (loading) {
     return <div className="flex justify-center py-24"><Loader2 className="w-7 h-7 text-[#8b2df2] animate-spin" /></div>;
   }
@@ -114,7 +106,22 @@ export default function JobDetails() {
     );
   }
 
-  const locked = shouldLockJob(job, user);
+  /**
+   * NO REDIRECT, AND NO CLIENT-SIDE DECISION.
+   *
+   * This page used to bounce every non-subscriber to /subscribe, losing the
+   * listing they were interested in and replacing a concrete question with an
+   * abstract one. Then it rendered the free half and decided the lock itself —
+   * which still meant the paid content was sitting in the browser, hidden by a
+   * conditional.
+   *
+   * Now api/jobs.ts deletes examDetails, studyMaterial, customSections and
+   * linkButtons from the payload for anyone not entitled to them, and sends
+   * `locked` plus `contentSummary` instead. The guards below are presentation,
+   * not protection: on a locked job there is simply nothing to render.
+   */
+  const locked = job.locked === true;
+  const lockedRows = job.contentSummary || [];
 
   const company = (job.companyName || '').trim();
   const skills = (job.skills || []).filter((s) => s.trim());
@@ -129,52 +136,12 @@ export default function JobDetails() {
   // Button URLs go through the same allow-list as links inside rich text.
   // Without this a protocol-less "www.ssc.nic.in" resolves as a RELATIVE path
   // (so the button 404s) and a javascript: URL would render as a live link.
+  // Empty for a locked job — the server never sent linkButtons.
   const linkButtons = (job.linkButtons || [])
     .map((b) => ({ ...b, url: safeUrl(b.url || '') }))
     .filter((b) => b.text?.trim() && !!b.url) as { text: string; url: string; bgColor: string; textColor: string }[];
   const customSections = (job.customSections || []).filter((s) => s.title?.trim() || !isEmptyHtml(s.content));
   const hasSummary = !!(job.experience || job.salary || job.location || wm || job.applicationEndDate || job.examDate) || !isEmptyHtml(job.ageLimit);
-
-  /**
-   * The manifest shown in place of the paid sections when a listing is locked.
-   *
-   * Two rules decide what appears here, and both exist to protect the sale:
-   *
-   * 1. NEVER PROMISE WHAT IS NOT THERE. A row appears only for content the job
-   *    actually holds. A "Study material" row on a listing with none is a
-   *    promise the purchase cannot keep.
-   *
-   * 2. NEVER SELL BACK WHAT IS ALREADY FREE. Custom sections pass through
-   *    isSellableSection(), which drops titles restating free fields
-   *    ("Important Dates" sits on the same screen as the four free date
-   *    fields), disclaimers ("Please Note" — a caveat is not a benefit), and
-   *    labels too vague or too short to want ("Post", "05 posts").
-   *
-   * Filtered sections still RENDER IN FULL for a subscriber below. They are the
-   * listing's content; they simply are not reasons to pay.
-   *
-   * The same function governs the lock itself, so a listing whose only sections
-   * are filtered out is not locked at all — no lock can open onto an empty panel.
-   */
-  const lockedRows: LockedRow[] = [];
-  if (locked) {
-    if (!isEmptyHtml(job.examDetails)) {
-      lockedRows.push({ icon: FileText, label: 'Exam pattern and details', note: 'Included' });
-    }
-    if (!isEmptyHtml(job.studyMaterial)) {
-      lockedRows.push({ icon: BookOpen, label: 'Study material', note: 'Included' });
-    }
-    customSections.filter(isSellableSection).forEach((s) => {
-      lockedRows.push({ icon: Info, label: s.title!.trim(), note: 'Included' });
-    });
-    if (linkButtons.length > 0) {
-      lockedRows.push({
-        icon: ExternalLink,
-        label: 'Official notification and apply links',
-        note: `${linkButtons.length} ${linkButtons.length === 1 ? 'link' : 'links'}`,
-      });
-    }
-  }
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto">
@@ -274,11 +241,9 @@ export default function JobDetails() {
             )}
           </div>
 
-          {/* ---- Paid sections. Rendered whenever the listing is NOT locked for
-                  this user — a subscriber on any listing, or anyone on a listing
-                  that never earned a paywall. Note that EVERY custom section
-                  renders here, including ones the manifest filtered out: they
-                  are the listing's content, they just were not sales points. ---- */}
+          {/* ---- Paid sections. On a locked job these are all absent from the
+                  payload, so the isEmptyHtml checks alone would suffice — the
+                  `!locked` guards are kept as documentation of intent. ---- */}
           {!locked && !isEmptyHtml(job.examDetails) && (
             <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-3">
@@ -322,9 +287,9 @@ export default function JobDetails() {
           )}
 
           {/* ---- Or, when locked, ONE panel describing what is behind the gate.
-                  One consolidated block rather than a lock per section: six
-                  stacked locks read as a wall and feel punitive, while a single
-                  list reads as a product description. ---- */}
+                  Rows come from the server, which builds them fresh on every
+                  request — so the manifest can never drift out of step with the
+                  content, and it never carries a word of it. ---- */}
           {locked && lockedRows.length > 0 && (
             <div className="bg-white rounded-2xl shadow-soft p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-1">
@@ -336,15 +301,18 @@ export default function JobDetails() {
               </p>
 
               <div className="border-t border-zinc-100">
-                {lockedRows.map((row, i) => (
-                  <div key={i} className={`flex items-center justify-between gap-3 py-3 ${i < lockedRows.length - 1 ? 'border-b border-zinc-100' : ''}`}>
-                    <span className="inline-flex items-center gap-2.5 min-w-0 text-sm text-zinc-800">
-                      <row.icon className="w-4 h-4 text-zinc-400 shrink-0" />
-                      <span className="truncate">{row.label}</span>
-                    </span>
-                    <span className="text-xs text-zinc-400 whitespace-nowrap shrink-0">{row.note}</span>
-                  </div>
-                ))}
+                {lockedRows.map((row, i) => {
+                  const RowIcon = ROW_ICON[row.kind] || Info;
+                  return (
+                    <div key={i} className={`flex items-center justify-between gap-3 py-3 ${i < lockedRows.length - 1 ? 'border-b border-zinc-100' : ''}`}>
+                      <span className="inline-flex items-center gap-2.5 min-w-0 text-sm text-zinc-800">
+                        <RowIcon className="w-4 h-4 text-zinc-400 shrink-0" />
+                        <span className="truncate">{row.label}</span>
+                      </span>
+                      <span className="text-xs text-zinc-400 whitespace-nowrap shrink-0">{row.note}</span>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* A single CTA. Repeating an upgrade button beside every locked

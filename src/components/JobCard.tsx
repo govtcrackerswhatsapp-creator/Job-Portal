@@ -1,6 +1,5 @@
 import { useNavigate } from 'react-router-dom';
 import { Job, UserProfile, Category } from '../types';
-import { shouldLockJob } from '../lib/access';
 import { workModeLabel, formatDate } from '../lib/format';
 import { labelForCategory } from '../lib/categoriesData';
 import { getJobStage, STAGE_TEXT_CLASS } from '../lib/jobStage';
@@ -27,6 +26,10 @@ function initials(name: string): string {
 interface JobCardProps {
   job: Job;
   index: number;
+  /**
+   * Kept for the caller's convenience and for future use, but the LOCK no
+   * longer depends on it — see `locked` below.
+   */
   user: UserProfile | null;
   isSaved: boolean;
   onToggleSave: (jobId: string) => void;
@@ -48,14 +51,18 @@ export default function JobCard({ job, index, user, isSaved, onToggleSave, savin
   const wm = workModeLabel(job.workMode);
 
   /**
-   * Whether THIS listing shows a lock to THIS user.
+   * Whether this listing shows a lock.
    *
-   * Was `!hasPortalAccess(user)`, which promised a lock on every job — including
-   * ones with nothing behind it. A free user then opened such a job and found
-   * no locked panel at all, which reads as broken. shouldLockJob() is the same
-   * function JobDetails uses, so the card and the page can no longer disagree.
+   * Decided by the SERVER and delivered on the job itself. api/jobs.ts checks
+   * the caller's subscription against the user document, works out whether the
+   * listing has anything worth gating, and sets this flag — then deletes the
+   * paid fields from the payload before responding.
+   *
+   * So the lock is no longer a claim the card makes about content sitting in
+   * the same browser. It reports a decision already taken somewhere the user
+   * cannot reach, about content they were never sent.
    */
-  const locked = shouldLockJob(job, user);
+  const locked = job.locked === true;
 
   /**
    * Where this listing sits on its own timeline.
@@ -71,8 +78,8 @@ export default function JobCard({ job, index, user, isSaved, onToggleSave, savin
 
   /**
    * Everyone goes to the listing. JobDetails renders the free half for all
-   * accounts and swaps the paid sections for a manifest panel when locked, so
-   * the ask happens in context instead of on an abstract pricing page.
+   * accounts and shows a manifest panel when locked, so the ask happens in
+   * context instead of on an abstract pricing page.
    */
   const openJob = () => navigate(`/job/${job.id}`);
 
