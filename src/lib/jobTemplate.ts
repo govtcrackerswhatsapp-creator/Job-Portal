@@ -8,15 +8,15 @@ import { timestampToDateInput } from './format';
  * Export writes the SAME shape the importer reads, so the round trip works:
  * export -> edit (by hand or with an AI) -> import -> updates in place.
  *
- * The category list is not hardcoded. Categories are editable, so the real ids
- * are passed in and the text is built around them — otherwise the template
- * would name categories that may have been renamed and every row would be
- * rejected.
+ * >>> KEEP IN SYNC WITH api/_lib/jobGate.ts <
  *
- * CHANGED: the prompt now describes the SELLABILITY FILTER as well as the
- * free/paid split. A section whose title restates a free field, or which is
- * too vague or too short, is dropped from the paywall manifest silently. An AI
- * that does not know that will keep writing sections that quietly vanish.
+ * The filter words listed in the prompt below are a HAND-COPY of the
+ * UNSELLABLE_TITLE and VAGUE_TITLE patterns in that file. They have already
+ * drifted apart once — the patterns were widened and this text was not, so the
+ * template documented twenty filter words when the code enforced thirty-seven,
+ * and its own example section was silently being dropped.
+ *
+ * If you edit either pattern there, edit the list here in the same commit.
  */
 
 /** The four ids that exist on a fresh install, used when no list is supplied. */
@@ -62,22 +62,40 @@ titles you choose decide whether anyone pays.
 THE SELLABILITY FILTER — the part most files get wrong.
 A custom section is DROPPED from that panel, silently, in three cases:
 
-  1. Its title contains any of: date, dates, timeline, schedule, eligibility,
-     age, qualification, qualifications, educational, salary, pay scale,
-     location, work mode, experience, note, notes, disclaimer, attention,
-     caution, warning.
-     All of these either restate a field the reader already has for free, or
-     advertise a caveat. A paid row promising "Important Dates" sits on the same
-     screen as the free dates, and the only conclusion available to the reader
-     is that the paywall is padded.
+  1. Its title CONTAINS any of these words, in any position:
 
-  2. Its title is a bare generic word on its own: Post, Posts, Detail, Details,
-     Other, Others, Info, Information, General, Misc, About, Summary, Overview,
-     Content, Data. A LONGER title containing one of those words is fine —
-     "Post Details and Vacancies" is kept, "Post" is not.
+       date, dates, deadline, deadlines, timeline, schedule, window,
+       application, apply, stage, status, current, closed, open, live,
+       eligibility, age, qualification, qualifications, educational,
+       salary, pay scale, stipend, location, venue, work mode, experience,
+       vacancy, vacancies, note, notes, disclaimer, attention, caution,
+       warning, important
+
+     Every one of these either restates a field the reader already has for
+     free, or advertises a caveat, or names a bare fact rather than knowledge.
+     A paid row promising "Important Dates" sits on the same screen as the free
+     dates, and the only conclusion available to the reader is that the paywall
+     is padded.
+
+     This catches more than you expect. "Application Fee" is dropped on
+     "application"; call it "Fee Structure" instead. "Post Details and
+     Vacancies" is dropped on "vacancies"; call it "Post-wise Reservation
+     Breakup". Choose a title that names what the section TEACHES, not what
+     it lists.
+
+  2. Its title is one of these generic words ON ITS OWN, with nothing else:
+     Post, Posts, Detail, Details, Other, Others, Info, Information, General,
+     Misc, Miscellaneous, About, Summary, Overview, Content, Data, Update,
+     Updates. A longer title containing one of them is fine as long as it
+     passes rule 1 — "Bond Details" is kept, "Details" is not.
 
   3. Its content is under 25 characters. A perfect title with "05 posts"
      underneath it is a label, not a section.
+
+TITLES THAT WORK, as a guide: Selection Process, Fee Structure, Physical
+Standards, Medical Standards, Syllabus Breakdown, Reservation Breakup, Document
+Checklist, Exam Centres, Interview Rounds, Training Period, Probation Terms,
+Post-wise Reservation Breakup, Marking Scheme.
 
 Dropped sections still render in full for a paying subscriber. They are simply
 not advertised as reasons to buy. So a dropped section is not lost — it just
@@ -89,9 +107,8 @@ Rules that follow from all of the above:
   into customSections. Put such a note at the END of educationalQualification,
   which is free.
 - customSections are for SUBSTANTIVE preparation content with no dedicated
-  field: selection process, vacancy or post-wise breakdown, syllabus detail,
-  application fee structure, physical or medical standards, exam centre lists,
-  reservation breakup, document checklist.
+  field: selection process, syllabus detail, fee structure, physical or medical
+  standards, exam centre lists, reservation breakup, document checklist.
 - Give each section a SPECIFIC title and at least two or three real sentences
   of content.
 - FEWER REAL SECTIONS BEAT MORE PADDING. If a posting genuinely has no
@@ -154,7 +171,7 @@ function buildFieldGuide(categoryIds?: string[]): Record<string, string> {
     educationalQualification: 'FREE. Rich text. Also free for the same reason. Put any "verify against the official advertisement" caveat at the end of this field rather than in a paid section.',
     examDetails: 'PAID. Rich text. Exam pattern, marks, duration, negative marking. This is the description of the exam, not its date — the date goes in examDate.',
     studyMaterial: 'PAID. Rich text. Preparation resources, book lists, previous papers.',
-    customSections: 'PAID. List of { "title", "content" }. Titles are the paywall sales pitch, BUT a section is dropped from that pitch when its title restates a free field (date, eligibility, age, qualification, salary, location, experience, note, disclaimer...), when its title is a bare generic word on its own (Post, Details, Other, Summary...), or when its content is under 25 characters. Dropped sections still render for subscribers — they just stop selling. Use for substantive prep content only: selection process, vacancy breakdown, fee structure, physical standards.',
+    customSections: 'PAID. List of { "title", "content" }. Titles are the paywall sales pitch, BUT a section is dropped from that pitch when its title CONTAINS any of: date, dates, deadline, timeline, schedule, window, application, apply, stage, status, current, closed, open, live, eligibility, age, qualification, educational, salary, pay scale, stipend, location, venue, work mode, experience, vacancy, vacancies, note, disclaimer, attention, caution, warning, important — or when its title is a bare generic word on its own (Post, Details, Other, Summary, Update...) — or when its content is under 25 characters. Note that "Application Fee" is dropped; use "Fee Structure". Dropped sections still render for subscribers — they just stop selling.',
     linkButtons: 'PAID. List of { "text", "url", "bgColor", "textColor" }. Colours are optional and default to the site purple. url must be https://, mailto: or tel: and must contain the URL only.',
     onHold: 'true or false. OPTIONAL, and normally left out. Marks a listing whose dates have passed but which should stay out of the Expired tab (result pending, counselling under way). LEAVING IT OUT NEVER CHANGES A JOB\'S HOLD STATE, in merge or replace mode — to release jobs in bulk you must say "onHold": false explicitly. Setting it to true REQUIRES holdLabel in the same entry.',
     holdLabel: 'REQUIRED when onHold is true. SHOWN PUBLICLY on the job card in place of the usual status line, e.g. "Result awaited" or "Interview stage". Keep it under ' + String(60) + ' characters — longer labels are shortened. Do not put anything private here.',
@@ -187,17 +204,22 @@ const EXAMPLE_JOBS: Record<string, unknown>[] = [
     educationalQualification: "Bachelor's degree in any discipline from a recognised university.\nFinal-year students may apply provided they produce proof of passing before the document verification stage.\n\nPlease verify all requirements against the official notification before applying.",
     examDetails: '<b>Tier 1</b> - Objective, 100 questions, 200 marks, 60 minutes.<br><b>Tier 2</b> - Paper I compulsory for all posts.<br>Negative marking of 0.50 marks per wrong answer in Tier 1.',
     studyMaterial: '<ul><li>Previous 10 years solved papers</li><li>NCERT Mathematics classes 8-10</li><li>Daily current affairs for the last 12 months</li></ul>',
-    // Both titles are specific, neither contains a filtered word, and both have
-    // well over 25 characters of content — so both appear in the sales panel.
-    // Note what is ABSENT: no "Important Dates" section, because the four date
-    // fields above already cover it and are free.
+    /**
+     * Both titles clear all three filter rules, which is the point of showing
+     * them. "Fee Structure" is deliberately NOT "Application Fee" — that older
+     * wording was dropped on the word "application", and an example that fails
+     * the rules it demonstrates teaches exactly the wrong thing.
+     *
+     * Note also what is absent: no "Important Dates" section, because the four
+     * date fields above already cover it and are free.
+     */
     customSections: [
       {
         title: 'Selection Process',
         content: '1. Tier 1 - Computer Based Examination\n2. Tier 2 - Computer Based Examination\n3. Document Verification\n4. Final merit list',
       },
       {
-        title: 'Application Fee',
+        title: 'Fee Structure',
         content: 'General / OBC: Rs 100\nSC / ST / PwD / Women: Exempted\nPayment via BHIM UPI, net banking, or debit/credit card.',
       },
     ],
@@ -250,7 +272,8 @@ export function buildTemplateFile(categoryIds?: string[]): string {
         'TO REFRESH YOUR EXISTING JOBS: export them from Manage Jobs, hand that file to an AI together with "_aiPrompt" from here, and import the result. The export uses this exact shape and already carries each job\'s refCode, so rows update in place. Never rewrite a refCode — that is what turns an update into a duplicate.',
         'FREE VERSUS PAID: title, category, company, location, salary, experience, work mode, skills, all four dates, ageLimit and educationalQualification are shown to EVERYONE. examDetails, studyMaterial, customSections and linkButtons are shown only to subscribers, and are removed from the response entirely for anyone else.',
         'THE PAYWALL PANEL: a reader without a subscription sees a list of what a listing contains — the title of each custom section, whether exam details and study material exist, and how many official links there are. Those titles are the sales pitch.',
-        'SECTIONS CAN BE DROPPED FROM THAT PANEL. A custom section does not appear when its title restates a free field (containing date, eligibility, age, qualification, salary, location, experience, note, disclaimer and similar), when its title is a bare generic word on its own ("Post", "Details", "Other", "Summary"), or when its content is under 25 characters. Dropped sections still render in full for a subscriber — they simply stop doing any selling.',
+        'SECTIONS CAN BE DROPPED FROM THAT PANEL. A custom section does not appear when its title CONTAINS any of: date, dates, deadline, timeline, schedule, window, application, apply, stage, status, current, closed, open, live, eligibility, age, qualification, educational, salary, pay scale, stipend, location, venue, work mode, experience, vacancy, vacancies, note, disclaimer, attention, caution, warning, important. Also dropped when the title is a bare generic word on its own ("Post", "Details", "Other", "Summary", "Update"), or when its content is under 25 characters.',
+        'THE FILTER CATCHES MORE THAN YOU EXPECT. "Application Fee" is dropped on "application" — use "Fee Structure". "Post Details and Vacancies" is dropped on "vacancies" — use "Post-wise Reservation Breakup". Name a section for what it TEACHES, not for what it lists. Dropped sections still render in full for a subscriber; they simply stop doing any selling.',
         'HOW EXPIRY WORKS: a listing stays live until its examDate when one is set, otherwise until its applicationEndDate. Both days are inclusive. Set examDate on any recruitment decided by an exam and the listing will survive the application deadline instead of expiring on it.',
         'HOLD IS NEVER CLEARED BY OMISSION. A job put On Hold in the admin panel stays held no matter what you import, unless an entry says "onHold": false. That is true in replace mode too, where every other missing field IS cleared - a bulk content refresh must not be able to release a hold by accident. To release in bulk, add "onHold": false to those entries.',
         'MERGE MODE ONLY WRITES FIELDS YOU INCLUDE. To REMOVE bad custom sections from an existing job you must send "customSections" with the corrected array — omitting it leaves the old ones in place.',
